@@ -57,3 +57,8 @@ htmlcov/
 .mypy_cache/
 .dmypy.json
 dmypy.json
+
+# Large data files (exceed GitHub's 100MB limit)
+data/household_power_consumption.txt
+data/station_hour.csv
+data/city_hour.csv
