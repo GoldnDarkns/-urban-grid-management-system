@@ -57,7 +57,7 @@ def generate_zones(db, city, num_zones):
         zones.append(zone_doc)
     
     zones_collection.insert_many(zones)
-    print(f"✓ Inserted {len(zones)} zones")
+    print(f"[OK] Inserted {len(zones)} zones")
     return zones
 
 def generate_households(db, zones, num_households):
@@ -107,7 +107,7 @@ def generate_households(db, zones, num_households):
             household_counter += 1
     
     households_collection.insert_many(households)
-    print(f"✓ Inserted {len(households)} households")
+    print(f"[OK] Inserted {len(households)} households")
     return households
 
 def generate_policy(db, city):
@@ -141,7 +141,7 @@ def generate_policy(db, city):
     }
     
     policies_collection.insert_one(policy_doc)
-    print("✓ Inserted AQI policy")
+    print("[OK] Inserted AQI policy")
     return policy_doc
 
 def generate_grid_edges(db, zones):
@@ -189,7 +189,7 @@ def generate_grid_edges(db, zones):
                 })
     
     edges_collection.insert_many(edges)
-    print(f"✓ Inserted {len(edges)} grid edges")
+    print(f"[OK] Inserted {len(edges)} grid edges")
     return edges
 
 def seed_database(reset=False, num_zones=DEFAULT_ZONES, num_households=DEFAULT_HOUSEHOLDS, city=DEFAULT_CITY):
@@ -202,7 +202,7 @@ def seed_database(reset=False, num_zones=DEFAULT_ZONES, num_households=DEFAULT_H
     print(f"Households: {num_households}")
     
     if reset:
-        print("\n⚠️  RESET MODE: Dropping existing collections...")
+        print("\n[WARNING] RESET MODE: Dropping existing collections...")
         collections_to_drop = [
             "zones", "households", "meter_readings", "air_climate_readings",
             "constraint_events", "policies", "alerts", "grid_edges"

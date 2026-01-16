@@ -70,7 +70,7 @@ def show_zone_adjacency(zone_id):
     # Get neighbor details
     neighbor_zones = db.zones.find({"_id": {"$in": neighbor_ids}})
     for nz in neighbor_zones:
-        print(f"  → {nz['_id']}: {nz['name']} (Priority: {nz['grid_priority']})")
+        print(f"  -> {nz['_id']}: {nz['name']} (Priority: {nz['grid_priority']})")
     
     print()
     return neighbor_ids

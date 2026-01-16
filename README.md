@@ -1,18 +1,26 @@
 # Climate- and Constraint-Aware Urban Grid Management System
 
-## Phase 1: MongoDB Foundation
+A full-stack intelligent system for managing urban energy grids with deep learning-powered demand forecasting, anomaly detection, and zone risk assessment.
 
-This is Phase 1 of the Urban Grid Management System project. This phase focuses on setting up the MongoDB database foundation with core collections, indexes, and seed data.
+## 🌟 Features
 
-### Prerequisites
+- **MongoDB Database**: Time-series data storage with optimized indexes
+- **Deep Learning Models**:
+  - LSTM for energy demand forecasting
+  - Autoencoder for anomaly detection
+  - GNN for zone risk scoring
+- **FastAPI Backend**: RESTful API with real-time analytics
+- **React Frontend**: Modern, responsive dashboard with interactive visualizations
+
+## 📋 Prerequisites
 
 - Python 3.8 or higher
-- MongoDB (local installation or MongoDB Atlas)
-- pip (Python package manager)
+- Node.js 18+ and npm
+- MongoDB (local or MongoDB Atlas)
 
-### Setup Instructions
+## 🚀 Quick Start
 
-#### 1. Create Virtual Environment
+### 1. Clone and Setup Python Environment
 
 ```bash
 # Create virtual environment
@@ -23,140 +31,233 @@ python -m venv venv
 venv\Scripts\activate
 # On macOS/Linux:
 source venv/bin/activate
-```
 
-#### 2. Install Dependencies
-
-```bash
+# Install Python dependencies
 pip install -r requirements.txt
 ```
 
-#### 3. Configure MongoDB Connection
+### 2. Configure MongoDB
 
 1. Copy the example environment file:
    ```bash
-   copy .env.example .env
-   # On macOS/Linux:
-   # cp .env.example .env
+   copy .env.example .env   # Windows
+   cp .env.example .env     # macOS/Linux
    ```
 
-2. Edit `.env` and set your MongoDB connection string:
+2. Edit `.env` with your MongoDB connection:
    ```
    MONGO_URI=mongodb://localhost:27017
    MONGO_DB=urban_grid_ai
    ```
 
-   For MongoDB Atlas, use:
+   For MongoDB Atlas:
    ```
    MONGO_URI=mongodb+srv://username:password@cluster.mongodb.net/?retryWrites=true&w=majority
+   MONGO_DB=urban_grid_ai
    ```
 
-#### 4. Seed the Database
-
-Run the seed script to populate the database with initial data:
+### 3. Initialize Database
 
 ```bash
-# Basic seeding (default: 20 zones, 500 households)
-python -m src.db.seed_core
-
-# Reset and reseed (drops existing collections)
+# Seed core data (zones, households, policies)
 python -m src.db.seed_core --reset
 
-# Custom parameters
-python -m src.db.seed_core --reset --zones 25 --households 1000 --city "NewCity"
-```
+# Ingest real-world datasets (requires data files in data/ folder)
+python -m src.db.ingest_real_data
 
-#### 5. Verify Setup
-
-Run the sanity check to verify everything is set up correctly:
-
-```bash
+# Verify setup
 python -m src.db.sanity_check
 ```
 
-This will:
-- Test database connection
-- Print collection counts
-- Display sample documents
-- Show zone adjacency relationships
-
-### Project Structure
-
-```
-urban-grid-ai/
-├── README.md
-├── requirements.txt
-├── .env.example
-├── .env                    # (create this, not in git)
-└── src/
-    ├── config.py
-    ├── db/
-    │   ├── mongo_client.py
-    │   ├── indexes.py
-    │   ├── seed_core.py
-    │   └── sanity_check.py
-    └── queries/
-        └── basic_queries.py
-```
-
-### Collections
-
-The database includes the following collections:
-
-- **zones**: City zones with metadata (population, critical infrastructure, priority)
-- **households**: Residential units distributed across zones
-- **meter_readings**: (Structure ready, data in later phases)
-- **air_climate_readings**: (Structure ready, data in later phases)
-- **constraint_events**: (Structure ready, data in later phases)
-- **policies**: AQI threshold policies and actions
-- **alerts**: (Structure ready, data in later phases)
-- **grid_edges**: Zone adjacency graph for network analysis
-
-### Default Configuration
-
-- **City Name**: MetroCity
-- **Zones**: 20 (Z_001 to Z_020)
-- **Households**: 500 (H_000001 to H_000500)
-- **Database Name**: urban_grid_ai
-
-### Running Basic Queries
+### 4. Train Deep Learning Models
 
 ```bash
-python -m src.queries.basic_queries
+# Train LSTM demand forecasting model
+python -m src.models.lstm_demand_forecast
+
+# Train Autoencoder anomaly detection model
+python -m src.models.autoencoder_anomaly
+
+# Train GNN zone risk scoring model
+python -m src.models.gnn_risk_scoring
 ```
 
-### Phase 1 Scope
+### 5. Start the Application
 
-This phase includes:
-- ✅ MongoDB connection setup
-- ✅ Collection structure and indexes
-- ✅ Seed data generation
-- ✅ Basic validation and queries
+```bash
+# Terminal 1: Start FastAPI backend
+uvicorn backend.main:app --reload --port 8000
 
-**Not included in Phase 1:**
-- ❌ Deep Learning models
-- ❌ Time-series data insertion
-- ❌ Real-time monitoring
-- ❌ Predictive analytics
+# Terminal 2: Start React frontend
+cd frontend
+npm install
+npm run dev
+```
 
-### Troubleshooting
+Open http://localhost:5173 in your browser.
 
-**Connection Error:**
-- Ensure MongoDB is running locally, or
-- Verify your MONGO_URI in `.env` is correct
-- Check network connectivity for Atlas
+## 📁 Project Structure
 
-**Import Errors:**
-- Ensure virtual environment is activated
-- Run `pip install -r requirements.txt` again
+```
+urban-grid-management-system/
+├── backend/                    # FastAPI Backend
+│   ├── main.py                # API entry point
+│   └── routes/
+│       ├── data.py            # MongoDB data endpoints
+│       ├── models.py          # ML model endpoints
+│       └── analytics.py       # Analytics endpoints
+│
+├── frontend/                   # React Frontend
+│   ├── src/
+│   │   ├── components/        # Reusable UI components
+│   │   ├── pages/             # Page components
+│   │   │   ├── Home.jsx       # Dashboard overview
+│   │   │   ├── Data.jsx       # MongoDB explorer
+│   │   │   ├── Analytics.jsx  # Charts & visualizations
+│   │   │   ├── LSTM.jsx       # LSTM model details
+│   │   │   ├── Autoencoder.jsx # Anomaly detection
+│   │   │   ├── GNN.jsx        # Graph neural network
+│   │   │   └── Insights.jsx   # AI recommendations
+│   │   └── services/
+│   │       └── api.js         # API client
+│   └── package.json
+│
+├── src/                        # Python ML & Database
+│   ├── config.py              # Configuration
+│   ├── db/
+│   │   ├── mongo_client.py    # MongoDB connection
+│   │   ├── indexes.py         # Index definitions
+│   │   ├── seed_core.py       # Core data seeding
+│   │   ├── seed_timeseries.py # Time-series generation
+│   │   ├── ingest_real_data.py # Real data ingestion
+│   │   └── sanity_check.py    # Database validation
+│   ├── queries/
+│   │   ├── basic_queries.py   # Basic MongoDB queries
+│   │   └── advanced_queries.py # Complex aggregations
+│   └── models/
+│       ├── lstm_demand_forecast.py   # LSTM model
+│       ├── autoencoder_anomaly.py    # Autoencoder model
+│       └── gnn_risk_scoring.py       # GNN model
+│
+├── data/                       # Datasets
+│   ├── README.md              # Dataset instructions
+│   └── (dataset files)
+│
+├── requirements.txt
+└── README.md
+```
 
-**Empty Collections:**
-- Run `python -m src.db.seed_core --reset` to populate data
+## 🗄️ MongoDB Collections
 
-### Next Steps
+| Collection | Description |
+|------------|-------------|
+| `zones` | City zones with population, priority, critical sites |
+| `households` | Residential units with baseline consumption |
+| `meter_readings` | Hourly energy consumption (time-series) |
+| `air_climate_readings` | AQI and weather data (time-series) |
+| `alerts` | System alerts (emergency, warning, watch) |
+| `constraint_events` | Lockdowns, advisories |
+| `policies` | AQI threshold policies |
+| `grid_edges` | Zone adjacency graph |
 
-After Phase 1 is complete, subsequent phases will add:
-- Time-series data ingestion
-- Deep Learning model integration (LSTM, Autoencoder, GNN)
-- Real-time monitoring and alerting
-- Predictive analytics and scenario simulation
+## 🤖 Deep Learning Models
+
+### LSTM Demand Forecasting
+- **Purpose**: Predict future energy demand
+- **Architecture**: 2 LSTM layers (64, 32 units) + Dense layers
+- **Input**: 24-hour historical data with 4 features
+- **Output**: Next hour demand prediction
+
+### Autoencoder Anomaly Detection
+- **Purpose**: Detect unusual consumption patterns
+- **Architecture**: Encoder (16→8→3) + Decoder (3→8→16)
+- **Method**: Reconstruction error threshold at 95th percentile
+- **Features**: Cyclical time encoding for hour/day
+
+### GNN Zone Risk Scoring
+- **Purpose**: Compute zone risk with network effects
+- **Architecture**: 2 Graph Conv layers (32, 16 units)
+- **Input**: Zone features + adjacency matrix
+- **Output**: Risk classification (Low/Medium/High)
+
+## 🌐 API Endpoints
+
+### Data Endpoints (`/api/data`)
+- `GET /status` - Database status
+- `GET /zones` - All zones
+- `GET /households` - Households list
+- `GET /alerts` - Recent alerts
+- `GET /grid-edges` - Zone connectivity
+
+### Analytics Endpoints (`/api/analytics`)
+- `GET /demand/hourly` - Hourly demand aggregation
+- `GET /demand/by-zone` - Demand by zone
+- `GET /aqi/by-zone` - AQI by zone
+- `GET /zone-risk` - Zone risk assessment
+- `GET /anomalies` - Consumption anomalies
+
+### Model Endpoints (`/api/models`)
+- `GET /overview` - All models summary
+- `GET /lstm` - LSTM model details
+- `GET /autoencoder` - Autoencoder details
+- `GET /gnn` - GNN details
+- `GET /lstm/prediction` - Live prediction
+
+## 📊 Frontend Pages
+
+1. **Home**: System overview, architecture diagram, quick stats
+2. **Data**: MongoDB collection explorer, indexes, zone details
+3. **Analytics**: Interactive charts (Recharts), demand/AQI visualizations
+4. **LSTM**: Model architecture, gates explanation, training results
+5. **Autoencoder**: Encoder-decoder visualization, anomaly detection
+6. **GNN**: Graph structure, message passing, risk scores
+7. **Insights**: AI recommendations, alerts, anomalies
+
+## 🔧 Configuration
+
+### Environment Variables (`.env`)
+```
+MONGO_URI=mongodb://localhost:27017
+MONGO_DB=urban_grid_ai
+```
+
+### Default Settings (`src/config.py`)
+- City: MetroCity
+- Zones: 20
+- Households: 500
+
+## 📈 Running Queries
+
+```bash
+# Basic queries (3 queries)
+python -m src.queries.basic_queries
+
+# Advanced queries (7 queries)
+python -m src.queries.advanced_queries
+```
+
+## 🐛 Troubleshooting
+
+**MongoDB Connection Error:**
+- Ensure MongoDB is running
+- Verify MONGO_URI in `.env`
+- Check network for Atlas
+
+**Frontend Build Error:**
+- Run `npm install` in frontend/
+- Check Node.js version (18+)
+
+**Model Training Error:**
+- Ensure data is loaded first
+- Check TensorFlow installation
+
+## 📚 Technologies
+
+- **Backend**: Python, FastAPI, PyMongo, TensorFlow
+- **Frontend**: React, Vite, Recharts, Framer Motion
+- **Database**: MongoDB / MongoDB Atlas
+- **ML**: LSTM, Autoencoder, GNN
+
+## 📝 License
+
+MIT License

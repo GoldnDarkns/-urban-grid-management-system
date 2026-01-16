@@ -13,9 +13,9 @@ def run_sanity_check():
     # Test connection
     print("1. Testing MongoDB connection...")
     if not ping():
-        print("❌ Connection failed!")
+        print("[X] Connection failed!")
         sys.exit(1)
-    print("✓ Connection successful\n")
+    print("[OK] Connection successful\n")
     
     db = get_db()
     
@@ -35,7 +35,7 @@ def run_sanity_check():
     all_exist = True
     for name, collection in collections.items():
         count = collection.count_documents({})
-        status = "✓" if count >= 0 else "❌"
+        status = "[OK]" if count >= 0 else "[X]"
         print(f"   {status} {name}: {count} documents")
         if count < 0:
             all_exist = False
@@ -47,11 +47,11 @@ def run_sanity_check():
     for coll_name in required_collections:
         count = collections[coll_name].count_documents({})
         if count == 0:
-            print(f"❌ {coll_name} is empty! Run seed_core.py first.")
+            print(f"[X] {coll_name} is empty! Run seed_core.py first.")
             all_exist = False
     
     if not all_exist:
-        print("\n❌ Sanity check failed!")
+        print("\n[X] Sanity check failed!")
         sys.exit(1)
     
     # Sample documents
@@ -63,7 +63,7 @@ def run_sanity_check():
     if zone:
         pprint(zone, indent=6)
     else:
-        print("      ❌ Z_001 not found")
+        print("      [X] Z_001 not found")
         sys.exit(1)
     
     # One policy
@@ -72,7 +72,7 @@ def run_sanity_check():
     if policy:
         pprint(policy, indent=6)
     else:
-        print("      ❌ Policy not found")
+        print("      [X] Policy not found")
         sys.exit(1)
     
     # Three households
@@ -82,7 +82,7 @@ def run_sanity_check():
         for h in households:
             pprint(h, indent=6)
     else:
-        print("      ❌ No households found")
+        print("      [X] No households found")
         sys.exit(1)
     
     # Zone neighbors
@@ -93,10 +93,10 @@ def run_sanity_check():
         neighbor_ids = [n["to_zone"] for n in neighbors]
         print(f"   {zone_id} is adjacent to: {', '.join(neighbor_ids)}")
     else:
-        print(f"   ❌ No neighbors found for {zone_id}")
+        print(f"   [X] No neighbors found for {zone_id}")
         sys.exit(1)
     
-    print("\n=== All checks passed! ✓ ===\n")
+    print("\n=== All checks passed! [OK] ===\n")
     sys.exit(0)
 
 if __name__ == "__main__":
