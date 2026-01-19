@@ -161,10 +161,10 @@ export default function Data() {
                   {Object.entries(collections).map(([name, info]) => (
                     <div key={name} className="collection-card">
                       <h4>{name}</h4>
-                      <div className="collection-count">{info.count.toLocaleString()} documents</div>
+                      <div className="collection-count">{(info.count || 0).toLocaleString()} documents</div>
                       <div className="collection-indexes">
                         <span className="index-label">Indexes:</span>
-                        {info.indexes.map(idx => (
+                        {(info.indexes || []).map(idx => (
                           <span key={idx} className="index-badge">{idx}</span>
                         ))}
                       </div>

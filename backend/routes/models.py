@@ -70,7 +70,13 @@ async def get_models_overview():
                 "type": "AutoRegressive Integrated Moving Average",
                 "purpose": "Classical statistical time-series forecasting",
                 "status": "trained" if arima_metrics else "not_trained",
-                "metrics": arima_metrics if arima_metrics else {
+                "metrics": {
+                    "r2_score": arima_metrics.get("r2") if arima_metrics else None,
+                    "rmse": arima_metrics.get("rmse") if arima_metrics else None,
+                    "mae": arima_metrics.get("mae") if arima_metrics else None,
+                    "mape": arima_metrics.get("mape") if arima_metrics else None,
+                    "training_time": arima_metrics.get("training_time", 5) if arima_metrics else 5
+                } if arima_metrics else {
                     "r2_score": None,
                     "rmse": None,
                     "mae": None
@@ -82,7 +88,13 @@ async def get_models_overview():
                 "type": "Facebook Prophet",
                 "purpose": "Additive regression model for forecasting with seasonality",
                 "status": "trained" if prophet_metrics else "not_trained",
-                "metrics": prophet_metrics if prophet_metrics else {
+                "metrics": {
+                    "r2_score": prophet_metrics.get("r2") if prophet_metrics else None,
+                    "rmse": prophet_metrics.get("rmse") if prophet_metrics else None,
+                    "mae": prophet_metrics.get("mae") if prophet_metrics else None,
+                    "mape": prophet_metrics.get("mape") if prophet_metrics else None,
+                    "training_time": prophet_metrics.get("training_time") if prophet_metrics else 15
+                } if prophet_metrics else {
                     "r2_score": None,
                     "rmse": None,
                     "mae": None
@@ -498,17 +510,17 @@ async def get_gnn_details():
         
         "risk_classification": {
             "classes": [
-                {"level": 0, "name": "Low", "description": "Normal operations", "score_range": "< 30"},
-                {"level": 1, "name": "Medium", "description": "Elevated risk, monitoring needed", "score_range": "30-60"},
-                {"level": 2, "name": "High", "description": "High risk, action required", "score_range": "> 60"}
+                {"level": 0, "name": "Low", "description": "Normal operations", "score_range": "< 8"},
+                {"level": 1, "name": "Medium", "description": "Elevated risk, monitoring needed", "score_range": "8-15"},
+                {"level": 2, "name": "High", "description": "High risk, action required", "score_range": ">= 15"}
             ],
             "factors": [
-                "Grid priority × 10",
-                "Hospital presence × 30",
-                "Water facility × 15",
-                "Emergency services × 10",
-                "High AQI (>150) × 25",
-                "Emergency alerts × 20"
+                "Grid priority 1: +8, Priority 2: +4",
+                "Hospital presence: +12",
+                "AQI > 300 (Hazardous): +25",
+                "AQI > 200 (Very Unhealthy): +15",
+                "AQI > 150 (Unhealthy): +8",
+                "Emergency alerts (3+): +20, (1-2): +10"
             ]
         },
         

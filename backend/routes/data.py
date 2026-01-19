@@ -32,24 +32,8 @@ def safe_get_db():
 async def get_database_status():
     """Get MongoDB connection status and database info."""
     try:
-        # Try ping first
+        # Use fast ping from connection pool
         is_connected = ping()
-        if not is_connected:
-            # Try a direct connection test with longer timeout
-            try:
-                from pymongo import MongoClient
-                from src.config import MONGO_URI, MONGO_DB
-                test_client = MongoClient(
-                    MONGO_URI, 
-                    serverSelectionTimeoutMS=30000,
-                    connectTimeoutMS=30000
-                )
-                test_client.admin.command('ping')
-                test_client.close()
-                is_connected = True
-            except Exception as e:
-                print(f"Direct connection test failed: {type(e).__name__}: {str(e)[:100]}")
-                pass
         
         if not is_connected:
             return {
@@ -85,21 +69,36 @@ async def get_database_status():
                 "error": f"Cannot access database: {error_msg}"
             }
         
-        # Get collection stats
+        # Get collection stats with fast estimated counts
         collections = {}
-        for coll_name in ["zones", "households", "policies", "grid_edges", 
+        collection_names = ["zones", "households", "policies", "grid_edges", 
                           "meter_readings", "air_climate_readings", 
-                          "constraint_events", "alerts"]:
+                          "constraint_events", "alerts"]
+        
+        for coll_name in collection_names:
             try:
+                coll = db[coll_name]
+                # Use estimated_document_count() for large collections (much faster)
+                # Fall back to count_documents() for small collections
+                if coll_name in ["meter_readings", "air_climate_readings"]:
+                    # Use estimated count for large time-series collections
+                    count = coll.estimated_document_count()
+                else:
+                    # Use exact count for smaller collections
+                    count = coll.count_documents({})
+                
+                # Get indexes
+                indexes = list(coll.index_information().keys())
+                
                 collections[coll_name] = {
-                    "count": db[coll_name].count_documents({}),
-                    "indexes": list(db[coll_name].index_information().keys())
+                    "count": count,
+                    "indexes": indexes
                 }
             except Exception as e:
                 collections[coll_name] = {
                     "count": 0,
                     "indexes": [],
-                    "error": str(e)
+                    "error": str(e)[:50]
                 }
         
         return {

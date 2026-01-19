@@ -14,6 +14,7 @@ import Simulation3D from './pages/Simulation3D';
 import ModelComparison from './pages/ModelComparison';
 import Reports from './pages/Reports';
 import AdvancedViz from './pages/AdvancedViz';
+import Guide from './pages/Guide';
 
 function App() {
   return (
@@ -36,6 +37,7 @@ function App() {
             <Route path="/insights" element={<Insights />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/visualizations" element={<AdvancedViz />} />
+            <Route path="/guide" element={<Guide />} />
           </Routes>
         </main>
       </div>

@@ -1,20 +1,22 @@
 import { Link, useLocation } from 'react-router-dom';
 import { 
   Home, Database, BarChart3, Brain, 
-  Activity, Network, Zap, Box, FileText, Eye, AlertTriangle, GitCompare, Map
+  Activity, Network, Zap, Box, FileText, Eye, AlertTriangle, GitCompare, Map, BookOpen
 } from 'lucide-react';
 
 const navItems = [
   { path: '/', label: 'Home', icon: Home },
-  { path: '/citymap', label: 'City Map', icon: Map },
-  { path: '/simulation3d', label: '3D City', icon: Box },
+  { path: '/guide', label: 'Guide', icon: BookOpen },
+  { path: '/data', label: 'Data', icon: Database },
   { path: '/analytics', label: 'Analytics', icon: BarChart3 },
   { path: '/lstm', label: 'LSTM', icon: Activity },
   { path: '/autoencoder', label: 'Autoencoder', icon: AlertTriangle },
   { path: '/gnn', label: 'GNN', icon: Network },
   { path: '/comparison', label: 'Compare', icon: GitCompare },
+  { path: '/insights', label: 'Insights', icon: Zap },
+  { path: '/citymap', label: 'City Map', icon: Map },
+  { path: '/simulation3d', label: '3D City', icon: Box },
   { path: '/visualizations', label: 'Viz', icon: Eye },
-  { path: '/data', label: 'Data', icon: Database },
   { path: '/reports', label: 'Reports', icon: FileText },
 ];
 
@@ -55,16 +57,19 @@ export default function Navbar() {
 
       <style>{`
         .navbar {
-          background: rgba(5, 10, 20, 0.9);
+          background: rgba(5, 10, 20, 0.95);
           backdrop-filter: blur(20px);
           border-bottom: 1px solid rgba(0, 212, 255, 0.2);
-          padding: 0.75rem 2rem;
+          padding: 0.75rem 1.5rem;
           display: flex;
           align-items: center;
-          justify-content: space-between;
+          gap: 1.5rem;
           position: sticky;
           top: 0;
           z-index: 100;
+          width: 100%;
+          box-sizing: border-box;
+          min-height: 60px;
         }
 
         .navbar::before {
@@ -87,6 +92,8 @@ export default function Navbar() {
           display: flex;
           align-items: center;
           gap: 0.75rem;
+          flex-shrink: 0;
+          min-width: fit-content;
         }
 
         .brand-icon-container {
@@ -96,6 +103,7 @@ export default function Navbar() {
           display: flex;
           align-items: center;
           justify-content: center;
+          flex-shrink: 0;
         }
 
         .brand-icon {
@@ -118,45 +126,58 @@ export default function Navbar() {
           display: flex;
           flex-direction: column;
           line-height: 1.1;
+          white-space: nowrap;
         }
 
         .brand-title {
           font-family: var(--font-display);
-          font-size: 1.1rem;
+          font-size: 1rem;
           font-weight: 700;
-          letter-spacing: 0.2em;
+          letter-spacing: 0.15em;
         }
 
         .brand-subtitle {
           font-family: var(--font-display);
-          font-size: 0.55rem;
+          font-size: 0.5rem;
           color: var(--accent-secondary);
           text-transform: uppercase;
-          letter-spacing: 0.3em;
+          letter-spacing: 0.25em;
           opacity: 0.8;
         }
 
         .nav-links {
           display: flex;
-          gap: 0.25rem;
+          gap: 0.2rem;
+          flex: 1;
+          overflow-x: auto;
+          overflow-y: hidden;
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+          min-width: 0;
+        }
+
+        .nav-links::-webkit-scrollbar {
+          display: none;
         }
 
         .nav-link {
           position: relative;
           display: flex;
           align-items: center;
-          gap: 0.4rem;
-          padding: 0.5rem 0.75rem;
+          gap: 0.35rem;
+          padding: 0.5rem 0.65rem;
           border-radius: 4px;
           color: var(--text-secondary);
           text-decoration: none;
           font-family: var(--font-display);
-          font-size: 0.7rem;
+          font-size: 0.65rem;
           font-weight: 500;
-          letter-spacing: 0.1em;
+          letter-spacing: 0.08em;
           text-transform: uppercase;
           transition: all 0.3s ease;
           border: 1px solid transparent;
+          white-space: nowrap;
+          flex-shrink: 0;
         }
 
         .nav-link:hover {
@@ -188,10 +209,12 @@ export default function Navbar() {
           align-items: center;
           gap: 0.5rem;
           font-family: var(--font-display);
-          font-size: 0.65rem;
+          font-size: 0.6rem;
           color: var(--accent-primary);
-          letter-spacing: 0.15em;
+          letter-spacing: 0.12em;
           text-transform: uppercase;
+          flex-shrink: 0;
+          white-space: nowrap;
         }
 
         .status-dot {
@@ -201,6 +224,7 @@ export default function Navbar() {
           border-radius: 50%;
           box-shadow: 0 0 10px var(--accent-primary);
           animation: pulse-glow 2s ease-in-out infinite;
+          flex-shrink: 0;
         }
 
         @keyframes pulse-glow {
@@ -214,24 +238,53 @@ export default function Navbar() {
           }
         }
 
+        @media (max-width: 1400px) {
+          .brand-title {
+            font-size: 0.9rem;
+          }
+          .nav-link {
+            font-size: 0.6rem;
+            padding: 0.5rem 0.55rem;
+          }
+        }
+
         @media (max-width: 1200px) {
+          .navbar {
+            padding: 0.75rem 1rem;
+            gap: 1rem;
+          }
           .nav-link span {
             display: none;
           }
           .nav-link {
             padding: 0.6rem;
+            min-width: 40px;
+            justify-content: center;
           }
           .nav-status span {
+            display: none;
+          }
+          .brand-text {
             display: none;
           }
         }
 
         @media (max-width: 768px) {
           .navbar {
-            padding: 0.5rem 1rem;
+            padding: 0.5rem 0.75rem;
+            gap: 0.75rem;
           }
-          .brand-subtitle {
-            display: none;
+          .brand-icon-container {
+            width: 32px;
+            height: 32px;
+          }
+          .brand-icon {
+            width: 20px;
+            height: 20px;
+          }
+          .nav-link {
+            padding: 0.5rem;
+            min-width: 36px;
           }
         }
       `}</style>

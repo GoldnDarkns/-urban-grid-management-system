@@ -245,35 +245,50 @@ async def get_zone_risk_factors():
             return {"data": [], "count": 0, "error": "MongoDB connection failed"}
         
         zones = list(db.zones.find())
+        
+        # Pre-aggregate all metrics in one pass for efficiency
+        # Get all demand metrics by zone
+        demand_pipeline = [
+            {"$group": {
+                "_id": "$zone_id",
+                "total_kwh": {"$sum": "$kwh"},
+                "avg_kwh": {"$avg": "$kwh"},
+                "max_kwh": {"$max": "$kwh"}
+            }}
+        ]
+        demand_by_zone = {r["_id"]: r for r in db.meter_readings.aggregate(demand_pipeline)}
+        
+        # Get all AQI metrics by zone
+        aqi_pipeline = [
+            {"$group": {
+                "_id": "$zone_id",
+                "avg_aqi": {"$avg": "$aqi"},
+                "max_aqi": {"$max": "$aqi"}
+            }}
+        ]
+        aqi_by_zone = {r["_id"]: r for r in db.air_climate_readings.aggregate(aqi_pipeline)}
+        
+        # Get all alert counts by zone
+        alert_pipeline = [
+            {"$group": {
+                "_id": "$zone_id",
+                "total": {"$sum": 1},
+                "emergency": {"$sum": {"$cond": [{"$eq": ["$level", "emergency"]}, 1, 0]}}
+            }}
+        ]
+        alerts_by_zone = {r["_id"]: r for r in db.alerts.aggregate(alert_pipeline)}
+        
         risk_data = []
         
         for zone in zones:
             zone_id = zone["_id"]
             
-            # Get demand metrics
-            demand = list(db.meter_readings.aggregate([
-                {"$match": {"zone_id": zone_id}},
-                {"$group": {
-                    "_id": None,
-                    "total_kwh": {"$sum": "$kwh"},
-                    "avg_kwh": {"$avg": "$kwh"},
-                    "max_kwh": {"$max": "$kwh"}
-                }}
-            ]))
-            
-            # Get AQI metrics
-            aqi = list(db.air_climate_readings.aggregate([
-                {"$match": {"zone_id": zone_id}},
-                {"$group": {
-                    "_id": None,
-                    "avg_aqi": {"$avg": "$aqi"},
-                    "max_aqi": {"$max": "$aqi"}
-                }}
-            ]))
-            
-            # Get alert count
-            alert_count = db.alerts.count_documents({"zone_id": zone_id})
-            emergency_count = db.alerts.count_documents({"zone_id": zone_id, "level": "emergency"})
+            # Get pre-aggregated metrics
+            demand = demand_by_zone.get(zone_id)
+            aqi = aqi_by_zone.get(zone_id)
+            alert_info = alerts_by_zone.get(zone_id, {"total": 0, "emergency": 0})
+            alert_count = alert_info["total"]
+            emergency_count = alert_info["emergency"]
             
             # Calculate risk score (normalized to 0-100 scale)
             # BASELINE: Most zones should be LOW risk (green) under normal conditions
@@ -294,8 +309,8 @@ async def get_zone_risk_factors():
                     risk_score += 12  # Hospitals need priority = higher risk if issues
             
             # AQI: Only VERY bad air quality adds risk
-            if aqi and aqi[0].get("avg_aqi"):
-                avg_aqi = aqi[0]["avg_aqi"]
+            if aqi and aqi.get("avg_aqi"):
+                avg_aqi = aqi["avg_aqi"]
                 if avg_aqi > 300:  # Hazardous
                     risk_score += 25
                 elif avg_aqi > 200:  # Very Unhealthy
@@ -310,10 +325,11 @@ async def get_zone_risk_factors():
             elif emergency_count >= 1:
                 risk_score += 10
             
-            # Determine risk level - HIGHER thresholds so most are green
-            if risk_score >= 40:
+            # Determine risk level - Adjusted thresholds to show meaningful variation
+            # Based on actual data: max score ~12, so thresholds adjusted accordingly
+            if risk_score >= 15:
                 risk_level = "high"
-            elif risk_score >= 20:
+            elif risk_score >= 8:
                 risk_level = "medium"
             else:
                 risk_level = "low"
@@ -324,8 +340,8 @@ async def get_zone_risk_factors():
                 "grid_priority": zone.get("grid_priority", 1),
                 "critical_sites": zone.get("critical_sites", []),
                 "population": zone.get("population_est", 0),
-                "demand": demand[0] if demand else None,
-                "aqi": aqi[0] if aqi else None,
+                "demand": demand if demand else None,
+                "aqi": aqi if aqi else None,
                 "alert_count": alert_count,
                 "emergency_count": emergency_count,
                 "risk_score": risk_score,

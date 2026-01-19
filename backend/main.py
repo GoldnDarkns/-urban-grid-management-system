@@ -125,31 +125,12 @@ async def root():
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint."""
-    from pymongo import MongoClient
-    from src.config import MONGO_URI, MONGO_DB
-    
-    # Try direct connection test with longer timeout
+    # Use the existing connection pool for fast response
     try:
-        test_client = MongoClient(
-            MONGO_URI, 
-            serverSelectionTimeoutMS=10000, 
-            connectTimeoutMS=10000,
-            socketTimeoutMS=20000
-        )
-        # Test ping
-        result = test_client.admin.command('ping')
-        # Test database access
-        db = test_client[MONGO_DB]
-        db.list_collection_names()
-        test_client.close()
-        db_status = "connected"
+        from src.db.mongo_client import ping
+        db_status = "connected" if ping() else "disconnected"
     except Exception as e:
-        # If direct test fails, try ping function
-        try:
-            from src.db.mongo_client import ping
-            db_status = "connected" if ping() else "disconnected"
-        except:
-            db_status = "disconnected"
+        db_status = "disconnected"
     
     return {
         "status": "healthy",

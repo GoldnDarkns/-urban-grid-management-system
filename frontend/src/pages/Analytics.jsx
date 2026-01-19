@@ -293,19 +293,17 @@ export default function Analytics() {
             <div className="chart-card full-width">
               <div className="chart-header">
                 <Calendar size={20} />
-                <h3>Historical Demand Comparison</h3>
+                <h3>Historical Demand (Last 168 Hours / 7 Days)</h3>
               </div>
               <div className="chart-body">
                 <ResponsiveContainer width="100%" height={350}>
-                  <LineChart data={historicalData}>
+                  <LineChart data={hourlyDemand}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#1a2a3a" />
-                    <XAxis dataKey="hour" stroke="#4a5a6a" tick={{ fill: '#8899aa', fontSize: 10 }} />
+                    <XAxis dataKey="time" stroke="#4a5a6a" tick={{ fill: '#8899aa', fontSize: 10 }} interval={12} />
                     <YAxis stroke="#4a5a6a" tick={{ fill: '#8899aa', fontSize: 10 }} />
                     <Tooltip contentStyle={{ background: 'rgba(10, 20, 30, 0.95)', border: '1px solid #00d4ff40' }} />
                     <Legend />
-                    <Line type="monotone" dataKey="today" stroke="#00ff88" strokeWidth={2} dot={false} name="Today" />
-                    <Line type="monotone" dataKey="lastWeek" stroke="#00d4ff" strokeWidth={2} dot={false} name="Last Week" />
-                    <Line type="monotone" dataKey="lastMonth" stroke="#ffaa00" strokeWidth={2} dot={false} name="Last Month" />
+                    <Line type="monotone" dataKey="total_demand" stroke="#00ff88" strokeWidth={2} dot={false} name="Total Demand (kW)" />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
