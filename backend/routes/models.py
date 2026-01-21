@@ -545,6 +545,14 @@ async def get_lstm_prediction():
     """Get sample LSTM prediction."""
     try:
         import numpy as np
+        import tensorflow as tf
+        _g = tf.config.list_physical_devices('GPU')
+        if _g:
+            for _d in _g:
+                try:
+                    tf.config.experimental.set_memory_growth(_d, True)
+                except RuntimeError:
+                    pass
         from tensorflow import keras
         from sklearn.preprocessing import MinMaxScaler
         from src.db.mongo_client import get_db

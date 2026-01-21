@@ -2,7 +2,7 @@
 
 A full-stack intelligent system for managing urban energy grids with deep learning-powered demand forecasting, anomaly detection, and zone risk assessment.
 
-> 📊 **Current Status:** See [PROJECT_STATUS.md](PROJECT_STATUS.md) for complete project status, features, and documentation.
+> 📊 **Current Status:** See [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md) for complete project status, features, and documentation.
 
 **Status:** ✅ Production Ready - All Core Features Implemented  
 **Version:** 1.0.0  
@@ -15,6 +15,8 @@ A full-stack intelligent system for managing urban energy grids with deep learni
   - LSTM for energy demand forecasting
   - Autoencoder for anomaly detection
   - GNN for zone risk scoring
+  - ARIMA and Prophet for statistical forecasting
+- **NLP Integration**: Incident Reports with automatic classification, urgency detection, and entity extraction
 - **FastAPI Backend**: RESTful API with real-time analytics
 - **React Frontend**: Modern, responsive dashboard with interactive visualizations
 
@@ -171,6 +173,7 @@ urban-grid-management-system/
 | `constraint_events` | Lockdowns, advisories |
 | `policies` | AQI threshold policies |
 | `grid_edges` | Zone adjacency graph |
+| `incident_reports` | Incident reports with NLP analysis |
 
 ## 🤖 Deep Learning Models
 
@@ -234,7 +237,14 @@ urban-grid-management-system/
 - `GET /arima` - ARIMA model details
 - `GET /prophet` - Prophet model details
 
-## 📊 Frontend Pages (13 Total)
+### Incident Reports Endpoints (`/api/incidents`)
+- `GET /incidents` - List incidents with filters (zone, category, urgency, status)
+- `GET /incidents/{id}` - Get specific incident details
+- `POST /incidents` - Create new incident (manual submission)
+- `GET /incidents/analytics/summary` - Summary statistics (categories, urgencies, sentiments)
+- `GET /incidents/analytics/trends` - Time-series trends
+
+## 📊 Frontend Pages (14 Total)
 
 1. **Home** (`/`) - System overview, architecture diagram, real-time stats
 2. **Guide** (`/guide`) - Complete system documentation and workflow
@@ -245,10 +255,11 @@ urban-grid-management-system/
 7. **GNN** (`/gnn`) - Graph structure, message passing, risk scores
 8. **Model Comparison** (`/comparison`) - Compare LSTM, ARIMA, Prophet performance
 9. **Insights** (`/insights`) - AI recommendations, alerts, anomalies
-10. **City Map** (`/citymap`) - Interactive 2D city map with zone visualization
-11. **3D City** (`/simulation3d`) - 3D city visualization with energy flow
-12. **Advanced Visualizations** (`/visualizations`) - Advanced data visualizations
-13. **Reports** (`/reports`) - Generate comprehensive reports
+10. **Incident Reports** (`/incidents`) - NLP-powered incident analysis, classification, and tracking
+11. **City Map** (`/citymap`) - Interactive 2D city map with zone visualization
+12. **3D City** (`/simulation3d`) - 3D city visualization with energy flow
+13. **Advanced Visualizations** (`/visualizations`) - Advanced data visualizations
+14. **Reports** (`/reports`) - Generate comprehensive reports
 
 > See [PROJECT_STATUS.md](PROJECT_STATUS.md) for detailed page descriptions.
 
@@ -308,7 +319,8 @@ python -m src.queries.advanced_queries
 
 ✅ **All Core Features Implemented**  
 ✅ **5 ML Models Trained** (LSTM, Autoencoder, GNN, ARIMA, Prophet)  
-✅ **13 Frontend Pages** - Complete user interface  
+✅ **NLP Integration** - Incident Reports with automatic classification and analysis  
+✅ **14 Frontend Pages** - Complete user interface  
 ✅ **MongoDB Atlas Connected** - 360K+ data points  
 ✅ **Real-time Analytics** - Accurate calculations verified  
 ✅ **Production Ready** - All systems operational  

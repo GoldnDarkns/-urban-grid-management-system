@@ -760,7 +760,7 @@ export default function Simulation3D() {
 
         <div className="canvas-panel">
           <div className="canvas-header">
-            <h3>TRON CITY - 3D WIREFRAME</h3>
+            <h3>Virtual City</h3>
             <div className="playback">
               <button onClick={() => setIsPlaying(!isPlaying)} disabled={!selectedScenario}>
                 {isPlaying ? <Pause size={16} /> : <Play size={16} />}

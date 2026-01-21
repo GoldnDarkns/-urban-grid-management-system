@@ -62,3 +62,12 @@ dmypy.json
 data/household_power_consumption.txt
 data/station_hour.csv
 data/city_hour.csv
+
+# Large model files (exceed GitHub's 100MB limit)
+src/models/transformer_incident_model/model.safetensors
+*.safetensors
+*.pkl
+*.h5
+*.ckpt
+*.pt
+*.pth

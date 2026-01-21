@@ -1,7 +1,9 @@
+import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { 
   Home, Database, BarChart3, Brain, 
-  Activity, Network, Zap, Box, FileText, Eye, AlertTriangle, GitCompare, Map, BookOpen
+  Activity, Network, Zap, Box, FileText, Eye, AlertTriangle, GitCompare, Map, BookOpen, ClipboardList,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 
 const navItems = [
@@ -14,6 +16,7 @@ const navItems = [
   { path: '/gnn', label: 'GNN', icon: Network },
   { path: '/comparison', label: 'Compare', icon: GitCompare },
   { path: '/insights', label: 'Insights', icon: Zap },
+  { path: '/incidents', label: 'Incidents', icon: ClipboardList },
   { path: '/citymap', label: 'City Map', icon: Map },
   { path: '/simulation3d', label: '3D City', icon: Box },
   { path: '/visualizations', label: 'Viz', icon: Eye },
@@ -22,6 +25,30 @@ const navItems = [
 
 export default function Navbar() {
   const location = useLocation();
+  const navLinksRef = useRef(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+
+  const scroll = (dir) => {
+    const el = navLinksRef.current;
+    if (!el) return;
+    const step = 200;
+    el.scrollBy({ left: dir === 'left' ? -step : step, behavior: 'smooth' });
+  };
+
+  const onNavScroll = () => {
+    const el = navLinksRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 2);
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 2);
+  };
+
+  useEffect(() => {
+    onNavScroll();
+    const t = setTimeout(onNavScroll, 100);
+    window.addEventListener('resize', onNavScroll);
+    return () => { clearTimeout(t); window.removeEventListener('resize', onNavScroll); };
+  }, []);
 
   return (
     <nav className="navbar">
@@ -36,18 +63,42 @@ export default function Navbar() {
         </span>
       </div>
 
-      <div className="nav-links">
-        {navItems.map(({ path, label, icon: Icon }) => (
-          <Link
-            key={path}
-            to={path}
-            className={`nav-link ${location.pathname === path ? 'active' : ''}`}
-          >
-            <Icon size={16} />
-            <span>{label}</span>
-            {location.pathname === path && <div className="active-indicator"></div>}
-          </Link>
-        ))}
+      <div className="nav-slider">
+        <button
+          type="button"
+          className="nav-slider-btn left"
+          onClick={() => scroll('left')}
+          disabled={!canScrollLeft}
+          aria-label="Scroll nav left"
+        >
+          <ChevronLeft size={18} />
+        </button>
+        <div
+          ref={navLinksRef}
+          className="nav-links"
+          onScroll={onNavScroll}
+        >
+          {navItems.map(({ path, label, icon: Icon }) => (
+            <Link
+              key={path}
+              to={path}
+              className={`nav-link ${location.pathname === path ? 'active' : ''}`}
+            >
+              <Icon size={16} />
+              <span>{label}</span>
+              {location.pathname === path && <div className="active-indicator"></div>}
+            </Link>
+          ))}
+        </div>
+        <button
+          type="button"
+          className="nav-slider-btn right"
+          onClick={() => scroll('right')}
+          disabled={!canScrollRight}
+          aria-label="Scroll nav right"
+        >
+          <ChevronRight size={18} />
+        </button>
       </div>
 
       <div className="nav-status">
@@ -143,6 +194,40 @@ export default function Navbar() {
           text-transform: uppercase;
           letter-spacing: 0.25em;
           opacity: 0.8;
+        }
+
+        .nav-slider {
+          display: flex;
+          align-items: center;
+          gap: 0.25rem;
+          flex: 1;
+          min-width: 0;
+        }
+
+        .nav-slider-btn {
+          flex-shrink: 0;
+          width: 28px;
+          height: 28px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: rgba(0, 212, 255, 0.1);
+          border: 1px solid rgba(0, 212, 255, 0.3);
+          border-radius: 4px;
+          color: var(--accent-secondary);
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .nav-slider-btn:hover:not(:disabled) {
+          background: rgba(0, 212, 255, 0.2);
+          border-color: var(--accent-secondary);
+          color: var(--accent-primary);
+        }
+
+        .nav-slider-btn:disabled {
+          opacity: 0.35;
+          cursor: not-allowed;
         }
 
         .nav-links {

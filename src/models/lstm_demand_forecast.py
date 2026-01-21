@@ -17,10 +17,19 @@ import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend
 import matplotlib.pyplot as plt
 
-# TensorFlow/Keras imports
+# TensorFlow/Keras imports (GPU used by default when available)
 import tensorflow as tf
 from tensorflow import keras
 from keras import layers, models, callbacks
+
+# Prefer GPU when available
+_gpus = tf.config.list_physical_devices('GPU')
+if _gpus:
+    try:
+        for _g in _gpus:
+            tf.config.experimental.set_memory_growth(_g, True)
+    except RuntimeError:
+        pass
 
 from src.db.mongo_client import get_db
 

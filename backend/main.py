@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from pymongo.errors import ConnectionFailure
 
-from backend.routes import data, models, analytics, simulations
+from backend.routes import data, models, analytics, simulations, incidents
 
 app = FastAPI(
     title="Urban Grid Management System API",
@@ -105,6 +105,7 @@ app.include_router(data.router, prefix="/api/data", tags=["Data"])
 app.include_router(models.router, prefix="/api/models", tags=["Models"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(simulations.router, prefix="/api/simulations", tags=["Simulations"])
+app.include_router(incidents.router, prefix="/api", tags=["Incidents"])
 
 
 @app.get("/")

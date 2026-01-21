@@ -1,0 +1,48 @@
+{
+  "activation": "gelu",
+  "architectures": [
+    "DistilBertForSequenceClassification"
+  ],
+  "attention_dropout": 0.1,
+  "dim": 768,
+  "dropout": 0.1,
+  "dtype": "float32",
+  "hidden_dim": 3072,
+  "id2label": {
+    "0": "transformer_fault",
+    "1": "voltage_issue",
+    "2": "outage",
+    "3": "high_demand",
+    "4": "pollution_complaint",
+    "5": "safety_hazard",
+    "6": "equipment_failure",
+    "7": "cable_damage",
+    "8": "weather_damage",
+    "9": "other"
+  },
+  "initializer_range": 0.02,
+  "label2id": {
+    "transformer_fault": 0,
+    "voltage_issue": 1,
+    "outage": 2,
+    "high_demand": 3,
+    "pollution_complaint": 4,
+    "safety_hazard": 5,
+    "equipment_failure": 6,
+    "cable_damage": 7,
+    "weather_damage": 8,
+    "other": 9
+  },
+  "max_position_embeddings": 512,
+  "model_type": "distilbert",
+  "n_heads": 12,
+  "n_layers": 6,
+  "pad_token_id": 0,
+  "problem_type": "single_label_classification",
+  "qa_dropout": 0.1,
+  "seq_classif_dropout": 0.2,
+  "sinusoidal_pos_embds": false,
+  "tie_weights_": true,
+  "transformers_version": "4.57.3",
+  "vocab_size": 30522
+}

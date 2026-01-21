@@ -42,4 +42,12 @@ def create_indexes(db):
     edges_collection.create_index([("to_zone", 1)], name="to_zone_idx")
     print("[OK] Created indexes for grid_edges")
     
+    # incident_reports indexes
+    incidents_collection = db.incident_reports
+    incidents_collection.create_index([("zone_id", 1), ("timestamp", -1)], name="zone_ts_idx")
+    incidents_collection.create_index([("nlp_analysis.category", 1)], name="category_idx")
+    incidents_collection.create_index([("nlp_analysis.urgency", 1)], name="urgency_idx")
+    incidents_collection.create_index([("status", 1)], name="status_idx")
+    print("[OK] Created indexes for incident_reports")
+    
     print("=== All indexes created successfully ===\n")

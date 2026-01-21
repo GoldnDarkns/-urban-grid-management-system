@@ -17,3 +17,7 @@ uvicorn>=0.23.0
 # Time Series Forecasting
 statsmodels>=0.14.0
 prophet>=1.1.5
+
+# Transformer NLP (optional: fine-tuned DistilBERT, T5/DistilBART summarization)
+torch>=2.0.0
+transformers>=4.30.0

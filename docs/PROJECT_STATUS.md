@@ -11,8 +11,9 @@
 The **Urban Grid Management System** is a full-stack intelligent platform for managing urban energy grids with climate and constraint awareness. The system uses deep learning models (LSTM, Autoencoder, GNN, ARIMA, Prophet) to forecast demand, detect anomalies, and assess zone risks in real-time.
 
 ### Key Achievements
-- ✅ **13 Navigation Pages** - Complete user interface
+- ✅ **14 Navigation Pages** - Complete user interface (including Incident Reports)
 - ✅ **5 Trained ML Models** - All models trained and operational
+- ✅ **NLP Integration** - Incident Reports with classification, urgency detection, entity extraction
 - ✅ **MongoDB Atlas Integration** - Cloud database with 360K+ data points
 - ✅ **Real-time Analytics** - Live dashboards with accurate calculations
 - ✅ **Responsive Design** - Modern UI with smooth animations
@@ -209,6 +210,13 @@ The **Urban Grid Management System** is a full-stack intelligent platform for ma
 - `GET /zone-risk` - Zone risk scores with network effects
 - `GET /anomalies` - Consumption anomalies detected
 
+### Incident Reports Endpoints (`/api/incidents`)
+- `GET /incidents` - List incidents with filters (zone, category, urgency, status)
+- `GET /incidents/{id}` - Get specific incident details
+- `POST /incidents` - Create new incident (manual submission)
+- `GET /incidents/analytics/summary` - Summary statistics (categories, urgencies, sentiments)
+- `GET /incidents/analytics/trends` - Time-series trends
+
 ### Models Endpoints (`/api/models`)
 - `GET /overview` - All models status and metrics
 - `GET /lstm` - LSTM model details
@@ -254,6 +262,14 @@ The **Urban Grid Management System** is a full-stack intelligent platform for ma
 - ✅ **Guide Page** - Complete system documentation added
 - ✅ **NLP Integration Discussion** - Future enhancement planning
 - ✅ **Project Status** - This comprehensive status document
+
+### NLP & Incident Reports (NEW)
+- ✅ **NLP Processing Pipeline** - Classification, urgency detection, entity extraction, sentiment analysis
+- ✅ **Incident Reports Collection** - MongoDB collection with 40 realistic incidents
+- ✅ **Auto-Generation** - Incidents auto-generated from anomalies and alerts
+- ✅ **Manual Submission** - API endpoint for creating incidents via form
+- ✅ **Incident Reports Page** - Complete frontend with NLP visualizations
+- ✅ **Context Enrichment** - Real-time zone metrics (AQI, demand, risk) integrated into NLP analysis
 
 ---
 
@@ -412,7 +428,7 @@ urban-grid-management-system/
 ## 🔮 Future Enhancements
 
 ### Planned Features
-1. **NLP Integration** - Text analysis for incident reports and customer feedback
+1. ✅ **NLP Integration** - Text analysis for incident reports and customer feedback (COMPLETED)
 2. **Advanced Simulations** - More scenario types and comparisons
 3. **Mobile App** - React Native mobile application
 4. **Real-time Alerts** - WebSocket-based live updates
@@ -422,10 +438,12 @@ urban-grid-management-system/
 8. **API Rate Limiting** - Production-ready API security
 
 ### NLP Integration Roadmap
-- Phase 1: Sentiment analysis for incident reports
-- Phase 2: Topic modeling for recurring issues
-- Phase 3: Auto-categorization and routing
-- Phase 4: Customer feedback analysis
+- ✅ Phase 1: Sentiment analysis for incident reports (COMPLETED)
+- ✅ Phase 2: Auto-categorization and classification (COMPLETED)
+- ✅ Phase 3: Urgency detection with context enrichment (COMPLETED)
+- ✅ Phase 4: Entity extraction (zones, equipment, time phrases) (COMPLETED)
+- ⏳ Phase 5: Topic modeling for recurring issues (FUTURE)
+- ⏳ Phase 6: Customer feedback analysis (FUTURE)
 
 ---
 

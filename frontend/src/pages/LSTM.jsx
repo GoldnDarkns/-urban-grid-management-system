@@ -8,6 +8,7 @@ import {
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, BarChart, Bar, ScatterChart, Scatter, ComposedChart } from 'recharts';
 import { modelsAPI } from '../services/api';
 import ModelArchitecture from '../components/ModelArchitecture';
+import { LSTMSequentialAnimation, LSTMCellAnimation } from '../components/LSTMArchitectureAnimation';
 import CodeBlock from '../components/CodeBlock';
 import MetricTooltip, { METRIC_EXPLANATIONS } from '../components/MetricTooltip';
 
@@ -372,6 +373,9 @@ X_train, y_train = create_sequences(train_data, n_steps=24)`;
             animate={{ opacity: 1 }}
             className="section-content"
           >
+            <div className="lstm-arch-anim-wrap">
+              <LSTMSequentialAnimation />
+            </div>
             <ModelArchitecture 
               layers={details.architecture.layers}
               title="LSTM Model Architecture"
@@ -451,38 +455,8 @@ X_train, y_train = create_sequences(train_data, n_steps=24)`;
             </div>
 
             <div className="lstm-diagram">
-              <h3>LSTM Cell Visualization</h3>
-              <div className="diagram-container">
-                <svg viewBox="0 0 600 300" className="lstm-svg">
-                  <line x1="50" y1="50" x2="550" y2="50" stroke="#00ff88" strokeWidth="3" />
-                  <text x="300" y="30" fill="#a0a0b0" textAnchor="middle" fontSize="12">Cell State (C_t)</text>
-                  
-                  <rect x="80" y="100" width="80" height="60" rx="8" fill="#1a1a25" stroke="#ff4466" strokeWidth="2" />
-                  <text x="120" y="135" fill="#ff4466" textAnchor="middle" fontSize="12">Forget</text>
-                  <text x="120" y="150" fill="#ff4466" textAnchor="middle" fontSize="10">Gate (σ)</text>
-                  
-                  <rect x="200" y="100" width="80" height="60" rx="8" fill="#1a1a25" stroke="#00d4ff" strokeWidth="2" />
-                  <text x="240" y="135" fill="#00d4ff" textAnchor="middle" fontSize="12">Input</text>
-                  <text x="240" y="150" fill="#00d4ff" textAnchor="middle" fontSize="10">Gate (σ)</text>
-                  
-                  <rect x="320" y="100" width="80" height="60" rx="8" fill="#1a1a25" stroke="#aa66ff" strokeWidth="2" />
-                  <text x="360" y="135" fill="#aa66ff" textAnchor="middle" fontSize="12">Candidate</text>
-                  <text x="360" y="150" fill="#aa66ff" textAnchor="middle" fontSize="10">(tanh)</text>
-                  
-                  <rect x="440" y="100" width="80" height="60" rx="8" fill="#1a1a25" stroke="#00ff88" strokeWidth="2" />
-                  <text x="480" y="135" fill="#00ff88" textAnchor="middle" fontSize="12">Output</text>
-                  <text x="480" y="150" fill="#00ff88" textAnchor="middle" fontSize="10">Gate (σ)</text>
-                  
-                  <line x1="50" y1="250" x2="550" y2="250" stroke="#00d4ff" strokeWidth="2" strokeDasharray="5,5" />
-                  <text x="300" y="280" fill="#a0a0b0" textAnchor="middle" fontSize="12">Hidden State (h_t)</text>
-                  
-                  <line x1="120" y1="160" x2="120" y2="50" stroke="#ff4466" strokeWidth="1" />
-                  <line x1="240" y1="160" x2="240" y2="50" stroke="#00d4ff" strokeWidth="1" />
-                  <line x1="360" y1="160" x2="360" y2="50" stroke="#aa66ff" strokeWidth="1" />
-                  <line x1="480" y1="100" x2="480" y2="50" stroke="#00ff88" strokeWidth="1" />
-                  <line x1="480" y1="160" x2="480" y2="250" stroke="#00ff88" strokeWidth="1" />
-                </svg>
-              </div>
+              <h3>LSTM cell: what happens in one step</h3>
+              <LSTMCellAnimation />
             </div>
           </motion.div>
         )}
@@ -1356,26 +1330,16 @@ X_train, y_train = create_sequences(train_data, n_steps=24)`;
           font-size: 0.875rem;
         }
 
+        .lstm-arch-anim-wrap {
+          margin-bottom: 2rem;
+        }
+
         .lstm-diagram {
           margin-top: 2rem;
         }
 
         .lstm-diagram h3 {
           margin-bottom: 1rem;
-        }
-
-        .diagram-container {
-          background: var(--bg-card);
-          border: 1px solid var(--border-color);
-          border-radius: 12px;
-          padding: 2rem;
-        }
-
-        .lstm-svg {
-          width: 100%;
-          max-width: 600px;
-          margin: 0 auto;
-          display: block;
         }
 
         .training-config h3 {

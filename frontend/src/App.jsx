@@ -15,6 +15,7 @@ import ModelComparison from './pages/ModelComparison';
 import Reports from './pages/Reports';
 import AdvancedViz from './pages/AdvancedViz';
 import Guide from './pages/Guide';
+import IncidentReports from './pages/IncidentReports';
 
 function App() {
   return (
@@ -38,6 +39,7 @@ function App() {
             <Route path="/reports" element={<Reports />} />
             <Route path="/visualizations" element={<AdvancedViz />} />
             <Route path="/guide" element={<Guide />} />
+            <Route path="/incidents" element={<IncidentReports />} />
           </Routes>
         </main>
       </div>

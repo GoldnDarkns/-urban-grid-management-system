@@ -66,6 +66,16 @@ export const simulationsAPI = {
     api.get(`/simulations/${simulationId}/analytics`),
 };
 
+// Incidents endpoints
+export const incidentsAPI = {
+  getIncidents: (params = {}) => api.get('/incidents', { params }),
+  getIncident: (incidentId) => api.get(`/incidents/${incidentId}`),
+  createIncident: (description, zoneId, reporter) => 
+    api.post('/incidents', null, { params: { description, zone_id: zoneId, reporter } }),
+  getSummary: (days = 30) => api.get('/incidents/analytics/summary', { params: { days } }),
+  getTrends: (days = 30) => api.get('/incidents/analytics/trends', { params: { days } }),
+};
+
 // Health check (note: this endpoint is at /api/health, not under /api base)
 export const healthCheck = () => axios.get('http://localhost:8000/api/health');
 
