@@ -200,8 +200,8 @@ export default function Data() {
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: index * 0.05 }}
                       >
-                        <td className="code">{zone.id}</td>
-                        <td>{zone.name}</td>
+                        <td className="code" title={zone.id}>{zone.id}</td>
+                        <td><strong>{zone.name}</strong></td>
                         <td>{zone.population_est?.toLocaleString()}</td>
                         <td>
                           <span className={`priority-badge priority-${zone.grid_priority}`}>

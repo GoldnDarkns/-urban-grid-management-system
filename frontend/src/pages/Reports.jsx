@@ -1,16 +1,50 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   FileText, Download, Calendar, Filter, BarChart3,
   Activity, Wind, AlertTriangle, Building2, Zap,
   FileSpreadsheet, File, Clock, CheckCircle, Loader
 } from 'lucide-react';
+import { analyticsAPI, dataAPI, modelsAPI } from '../services/api';
 
 export default function Reports() {
   const [selectedReport, setSelectedReport] = useState(null);
   const [dateRange, setDateRange] = useState('7d');
   const [generating, setGenerating] = useState(false);
   const [exportFormat, setExportFormat] = useState('pdf');
+  const [reportData, setReportData] = useState({
+    demand: null,
+    aqi: null,
+    zones: null,
+    models: null,
+    alerts: null
+  });
+
+  useEffect(() => {
+    fetchReportData();
+  }, []);
+
+  const fetchReportData = async () => {
+    try {
+      const [demandRes, aqiRes, zonesRes, modelsRes, alertsRes] = await Promise.all([
+        analyticsAPI.getHourlyDemand(null, 168).catch(() => ({ data: null })),
+        analyticsAPI.getAQIByZone().catch(() => ({ data: null })),
+        dataAPI.getZones().catch(() => ({ data: null })),
+        modelsAPI.getOverview().catch(() => ({ data: null })),
+        analyticsAPI.getAlertsSummary().catch(() => ({ data: null }))
+      ]);
+      
+      setReportData({
+        demand: demandRes.data,
+        aqi: aqiRes.data,
+        zones: zonesRes.data,
+        models: modelsRes.data,
+        alerts: alertsRes.data
+      });
+    } catch (error) {
+      console.error('Error fetching report data:', error);
+    }
+  };
 
   const reportTypes = [
     {
@@ -116,67 +150,120 @@ Period: ${dateRanges.find(d => d.id === range)?.label || range}
     let content = header;
     
     if (report.id === 'demand') {
+      // Use real demand data
+      const demandData = reportData.demand?.data || [];
+      const totalConsumption = demandData.reduce((sum, d) => sum + (d.total_kwh || 0), 0);
+      const peakDemand = Math.max(...demandData.map(d => d.total_kwh || 0), 0);
+      const avgLoad = demandData.length > 0 ? totalConsumption / demandData.length : 0;
+      const loadFactor = peakDemand > 0 ? (avgLoad / peakDemand * 100) : 0;
+
+      // Get zone-wise data
+      const zoneData = reportData.zones?.zones || [];
+      const zoneBreakdown = zoneData.slice(0, 5).map(zone => {
+        const zoneDemand = demandData.filter(d => d.zone_id === zone._id);
+        const zoneTotal = zoneDemand.reduce((sum, d) => sum + (d.total_kwh || 0), 0);
+        const zonePeak = Math.max(...zoneDemand.map(d => d.total_kwh || 0), 0);
+        return {
+          id: zone._id,
+          name: zone.name || zone._id,
+          total: zoneTotal,
+          peak: zonePeak,
+          efficiency: zonePeak > 0 ? (zoneTotal / (zonePeak * 24) * 100) : 0
+        };
+      });
+
       content += `
 ENERGY DEMAND SUMMARY
 =====================
 
-Total Consumption:     ${(Math.random() * 50000 + 100000).toFixed(0)} kWh
-Peak Demand:           ${(Math.random() * 2000 + 3000).toFixed(0)} kW
-Average Load:          ${(Math.random() * 500 + 800).toFixed(0)} kW
-Load Factor:           ${(Math.random() * 20 + 70).toFixed(1)}%
+Total Consumption:     ${totalConsumption.toFixed(0)} kWh
+Peak Demand:           ${peakDemand.toFixed(0)} kW
+Average Load:          ${avgLoad.toFixed(0)} kW
+Load Factor:           ${loadFactor.toFixed(1)}%
 
 ZONE-WISE BREAKDOWN
 -------------------
 Zone ID     | Consumption (kWh) | Peak (kW) | Efficiency
 ------------|-------------------|-----------|------------
-Z_001       | ${(Math.random() * 5000 + 8000).toFixed(0)}           | ${(Math.random() * 200 + 300).toFixed(0)}      | ${(Math.random() * 15 + 80).toFixed(1)}%
-Z_002       | ${(Math.random() * 5000 + 8000).toFixed(0)}           | ${(Math.random() * 200 + 300).toFixed(0)}      | ${(Math.random() * 15 + 80).toFixed(1)}%
-Z_003       | ${(Math.random() * 5000 + 8000).toFixed(0)}           | ${(Math.random() * 200 + 300).toFixed(0)}      | ${(Math.random() * 15 + 80).toFixed(1)}%
-Z_004       | ${(Math.random() * 5000 + 8000).toFixed(0)}           | ${(Math.random() * 200 + 300).toFixed(0)}      | ${(Math.random() * 15 + 80).toFixed(1)}%
-Z_005       | ${(Math.random() * 5000 + 8000).toFixed(0)}           | ${(Math.random() * 200 + 300).toFixed(0)}      | ${(Math.random() * 15 + 80).toFixed(1)}%
+${zoneBreakdown.map(z => `${z.id.padEnd(11)} | ${z.total.toFixed(0).padStart(17)} | ${z.peak.toFixed(0).padStart(9)} | ${z.efficiency.toFixed(1).padStart(9)}%`).join('\n')}
 
 PEAK HOURS ANALYSIS
 -------------------
-Morning Peak:  07:00 - 09:00 (${(Math.random() * 500 + 2500).toFixed(0)} kW avg)
-Evening Peak:  18:00 - 21:00 (${(Math.random() * 500 + 2800).toFixed(0)} kW avg)
-Off-Peak:      02:00 - 05:00 (${(Math.random() * 200 + 400).toFixed(0)} kW avg)
+[Based on ${demandData.length} hours of data]
 
 RECOMMENDATIONS
 ---------------
 1. Consider load shifting from evening peak to off-peak hours
-2. Zone Z_003 shows potential for demand response programs
-3. Investigate anomalous consumption in Zone Z_005
+2. Monitor zones with high peak demand
+3. Investigate anomalous consumption patterns
 `;
     } else if (report.id === 'aqi') {
+      // Use real AQI data
+      const aqiData = reportData.aqi?.data || {};
+      const aqiValues = Object.values(aqiData).map(z => z.avg_aqi || 0).filter(v => v > 0);
+      const avgAQI = aqiValues.length > 0 ? aqiValues.reduce((a, b) => a + b, 0) / aqiValues.length : 0;
+      const maxAQI = Math.max(...aqiValues, 0);
+      const hazardousDays = aqiValues.filter(v => v > 200).length;
+      const goodDays = aqiValues.filter(v => v <= 50).length;
+
+      // Zone rankings
+      const zoneRankings = Object.entries(aqiData)
+        .map(([zoneId, data]) => ({ zoneId, aqi: data.avg_aqi || 0 }))
+        .sort((a, b) => a.aqi - b.aqi)
+        .slice(0, 5);
+
       content += `
 AIR QUALITY SUMMARY
 ===================
 
-Average AQI:           ${(Math.random() * 50 + 80).toFixed(0)}
-Max AQI Recorded:      ${(Math.random() * 100 + 150).toFixed(0)}
-Hazardous Days:        ${Math.floor(Math.random() * 5)}
-Good Air Quality Days: ${Math.floor(Math.random() * 10 + 15)}
-
-POLLUTANT BREAKDOWN
--------------------
-Pollutant   | Average | Max   | Trend
-------------|---------|-------|--------
-PM2.5       | ${(Math.random() * 30 + 40).toFixed(1)}    | ${(Math.random() * 50 + 80).toFixed(1)}  | Stable
-PM10        | ${(Math.random() * 40 + 60).toFixed(1)}    | ${(Math.random() * 60 + 100).toFixed(1)}  | Decreasing
-NO2         | ${(Math.random() * 20 + 30).toFixed(1)}    | ${(Math.random() * 30 + 50).toFixed(1)}  | Increasing
-SO2         | ${(Math.random() * 10 + 15).toFixed(1)}    | ${(Math.random() * 15 + 25).toFixed(1)}  | Stable
-CO          | ${(Math.random() * 1 + 0.5).toFixed(2)}     | ${(Math.random() * 1 + 1).toFixed(2)}   | Stable
-O3          | ${(Math.random() * 30 + 40).toFixed(1)}    | ${(Math.random() * 40 + 60).toFixed(1)}  | Seasonal
+Average AQI:           ${avgAQI.toFixed(0)}
+Max AQI Recorded:      ${maxAQI.toFixed(0)}
+Hazardous Days:        ${hazardousDays}
+Good Air Quality Days: ${goodDays}
 
 ZONE RANKINGS (Best to Worst)
 -----------------------------
-1. Zone Z_012 - Avg AQI: ${(Math.random() * 20 + 50).toFixed(0)}
-2. Zone Z_008 - Avg AQI: ${(Math.random() * 20 + 60).toFixed(0)}
-3. Zone Z_015 - Avg AQI: ${(Math.random() * 20 + 70).toFixed(0)}
-...
-18. Zone Z_003 - Avg AQI: ${(Math.random() * 30 + 110).toFixed(0)}
-19. Zone Z_007 - Avg AQI: ${(Math.random() * 30 + 120).toFixed(0)}
-20. Zone Z_019 - Avg AQI: ${(Math.random() * 30 + 130).toFixed(0)}
+${zoneRankings.map((z, i) => `${i + 1}. Zone ${z.zoneId} - Avg AQI: ${z.aqi.toFixed(0)}`).join('\n')}
+`;
+    } else if (report.id === 'models') {
+      // Use real ML model metrics
+      const models = reportData.models?.models || [];
+      content += `
+MODEL PERFORMANCE REPORT
+========================
+
+ML MODEL METRICS
+----------------
+${models.map(m => `
+${m.name}
+${'='.repeat(50)}
+Type: ${m.type}
+Status: ${m.status}
+${m.metrics ? `
+R² Score: ${m.metrics.r2_score !== null && m.metrics.r2_score !== undefined ? m.metrics.r2_score.toFixed(4) : 'N/A'}
+RMSE: ${m.metrics.rmse ? m.metrics.rmse.toFixed(2) : 'N/A'}
+MAE: ${m.metrics.mae ? m.metrics.mae.toFixed(2) : 'N/A'}
+${m.metrics.mape ? `MAPE: ${m.metrics.mape.toFixed(2)}%` : ''}
+` : 'Metrics not available'}
+`).join('\n')}
+`;
+    } else if (report.id === 'alerts') {
+      // Use real alerts data
+      const alerts = reportData.alerts;
+      const total = alerts?.total || 0;
+      const byLevel = alerts?.by_level || {};
+      
+      content += `
+ALERTS & INCIDENTS SUMMARY
+===========================
+
+Total Alerts:          ${total}
+By Severity:
+  Emergency:           ${byLevel.emergency || 0}
+  Alert:               ${byLevel.alert || 0}
+  Watch:               ${byLevel.watch || 0}
+
+Generated by Urban Grid Management System
 `;
     } else {
       content += `
@@ -185,8 +272,6 @@ REPORT DATA
 
 This report contains analysis for: ${report.name}
 Metrics included: ${report.metrics.join(', ')}
-
-[Detailed data would be included here based on actual database queries]
 
 Generated by Urban Grid Management System
 For questions, contact: admin@urbangrid.system

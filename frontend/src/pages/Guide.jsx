@@ -4,7 +4,7 @@ import {
   BookOpen, Database, BarChart3, Brain, Activity, Network, 
   AlertTriangle, Zap, Map, GitCompare, Eye, FileText, 
   ArrowRight, CheckCircle, Info, TrendingUp, Target,
-  Server, Layers, Code, BarChart, LineChart
+  Server, Layers, Code, BarChart, LineChart, ClipboardList, Box
 } from 'lucide-react';
 import { dataAPI, analyticsAPI, modelsAPI } from '../services/api';
 import StatCard from '../components/StatCard';
@@ -50,11 +50,23 @@ export default function Guide() {
       features: ['System status indicators', 'Quick stats cards', 'System architecture diagram', 'Feature overview']
     },
     {
+      id: 'guide',
+      name: 'Guide',
+      path: '/guide',
+      icon: BookOpen,
+      order: 2,
+      description: 'Complete system documentation and workflow guide',
+      purpose: 'Learn how the system works, data flow, and how to use each page',
+      dataSource: 'System documentation and MongoDB status',
+      output: 'Workflow explanation, page-by-page guide, data flow diagrams',
+      features: ['System overview', 'Data flow explanation', 'Pages guide', 'Outputs documentation']
+    },
+    {
       id: 'data',
       name: 'Data',
       path: '/data',
       icon: Database,
-      order: 2,
+      order: 3,
       description: 'MongoDB data explorer - view all collections, zones, alerts, and grid structure',
       purpose: 'Inspect raw data stored in MongoDB Atlas',
       dataSource: 'Direct MongoDB queries (zones, households, alerts, grid_edges collections)',
@@ -66,7 +78,7 @@ export default function Guide() {
       name: 'Analytics',
       path: '/analytics',
       icon: BarChart3,
-      order: 3,
+      order: 4,
       description: 'Real-time analytics, correlations, and anomaly detection from MongoDB data',
       purpose: 'Analyze energy demand patterns, AQI trends, and detect consumption anomalies',
       dataSource: 'Aggregated MongoDB queries (hourly demand, AQI by zone, correlation matrix)',
@@ -74,64 +86,52 @@ export default function Guide() {
       features: ['Real-time demand charts (72 hours)', 'Demand by zone comparison', 'AQI by zone', 'Correlation matrix', 'Anomaly detection timeline']
     },
     {
-      id: 'lstm',
-      name: 'LSTM',
-      path: '/lstm',
-      icon: Activity,
-      order: 4,
-      description: 'LSTM neural network for energy demand forecasting',
-      purpose: 'Predict future energy demand based on historical consumption patterns',
-      dataSource: 'MongoDB meter_readings aggregated by hour, trained model (lstm_demand_model.keras)',
-      output: 'Demand predictions for next hour, model architecture visualization, training metrics (RMSE: 64.27, R²: 0.64)',
-      features: ['Model architecture diagram', 'LSTM gates explanation', 'Live predictions', 'Training history', 'Error analysis']
-    },
-    {
-      id: 'autoencoder',
-      name: 'Autoencoder',
-      path: '/autoencoder',
-      icon: AlertTriangle,
+      id: 'advanced-analytics',
+      name: 'Advanced Analytics',
+      path: '/advanced-analytics',
+      icon: Brain,
       order: 5,
-      description: 'Autoencoder neural network for anomaly detection in energy consumption',
-      purpose: 'Identify unusual consumption patterns that deviate from normal behavior',
-      dataSource: 'MongoDB meter_readings with features (kwh, voltage, time encoding), trained model (autoencoder_anomaly_model.keras)',
-      output: 'Anomaly scores, reconstruction errors, anomaly rate (5.33%), threshold (0.026)',
-      features: ['Encoder-decoder architecture', 'Reconstruction error visualization', 'Anomaly detection threshold', 'Training metrics']
+      description: 'Deep dive into ML models, MongoDB queries, and technical details',
+      purpose: 'Explore all 5 ML models (LSTM, Autoencoder, GNN, ARIMA, Prophet) and execute 10 MongoDB queries',
+      dataSource: 'ML model outputs, MongoDB query results',
+      output: 'Model architectures, training metrics, query results, model comparisons',
+      features: ['ML Model Details', 'MongoDB Queries (10 queries)', 'Model Comparison', 'Technical Deep-dive']
     },
     {
-      id: 'gnn',
-      name: 'GNN',
-      path: '/gnn',
-      icon: Network,
+      id: 'ai-recommendations',
+      name: 'AI Recommendations',
+      path: '/ai-recommendations',
+      icon: Brain,
       order: 6,
-      description: 'Graph Neural Network for zone risk scoring considering network effects',
-      purpose: 'Calculate zone risk scores accounting for neighboring zone influence',
-      dataSource: 'MongoDB zones, grid_edges, meter_readings, air_climate_readings, alerts',
-      output: 'Zone risk scores (Low/Medium/High), risk distribution, graph visualization',
-      features: ['Graph structure visualization', 'Message passing explanation', 'Risk classification', 'Zone connectivity graph']
-    },
-    {
-      id: 'comparison',
-      name: 'Model Comparison',
-      path: '/comparison',
-      icon: GitCompare,
-      order: 7,
-      description: 'Compare performance of LSTM, ARIMA, and Prophet forecasting models',
-      purpose: 'Evaluate which model performs best for demand forecasting',
-      dataSource: 'Model metrics from trained models (LSTM, ARIMA, Prophet)',
-      output: 'Performance comparison: RMSE, MAE, R² scores, prediction comparison charts',
-      features: ['Model performance metrics', '48-hour prediction comparison', 'Error distribution', 'Training time comparison']
+      description: 'AI-powered actionable recommendations synthesized from all ML models',
+      purpose: 'Get prioritized, intelligent recommendations based on all system data and ML predictions',
+      dataSource: 'All ML model outputs, zone risk, alerts, anomalies, AQI status (compiled and analyzed by Gemini AI)',
+      output: 'Prioritized recommendations with actions, cost-benefit analysis, confidence scores, simulation suggestions',
+      features: ['AI Synthesis', 'Prioritized Actions', 'Cost-Benefit Analysis', 'Simulation Suggestions', 'Confidence Scores']
     },
     {
       id: 'insights',
       name: 'Insights',
       path: '/insights',
       icon: Zap,
-      order: 8,
-      description: 'AI-powered recommendations and actionable insights',
-      purpose: 'Provide actionable recommendations based on risk scores, alerts, and anomalies',
+      order: 7,
+      description: 'Rule-based recommendations and insights from current system state',
+      purpose: 'View insights based on risk scores, alerts, and anomalies',
       dataSource: 'Zone risk scores, alerts, anomalies from MongoDB',
       output: 'Recommendations for high-risk zones, emergency alerts, anomaly actions, AQI advisories',
       features: ['Risk-based recommendations', 'Alert summaries', 'Anomaly insights', 'Action items']
+    },
+    {
+      id: 'incidents',
+      name: 'Incidents',
+      path: '/incidents',
+      icon: ClipboardList,
+      order: 8,
+      description: 'Incident reports with NLP-powered classification and analysis',
+      purpose: 'Manage and analyze incident reports with automatic categorization',
+      dataSource: 'Incident reports with NLP processing (category, urgency, sentiment)',
+      output: 'Incident list, categorization, urgency detection, entity extraction, trends',
+      features: ['NLP Classification', 'Urgency Detection', 'Entity Extraction', 'Incident Trends']
     },
     {
       id: 'citymap',
@@ -149,7 +149,7 @@ export default function Guide() {
       id: 'simulation3d',
       name: '3D City',
       path: '/simulation3d',
-      icon: Eye,
+      icon: Box,
       order: 10,
       description: '3D visualization of the city with energy flow and risk propagation',
       purpose: 'Visualize energy distribution and risk in 3D space',
@@ -201,22 +201,29 @@ export default function Guide() {
     {
       step: 3,
       name: 'ML Model Inference',
-      description: 'Trained models (LSTM, Autoencoder, GNN) make predictions and classifications',
-      data: 'Demand forecasts, anomaly scores, risk classifications',
+      description: '5 trained models (LSTM, Autoencoder, GNN, ARIMA, Prophet) make predictions',
+      data: 'Demand forecasts, anomaly scores, risk classifications, statistical forecasts',
       icon: Brain
     },
     {
       step: 4,
-      name: 'Analytics & Insights',
-      description: 'Backend calculates analytics, correlations, and generates recommendations',
-      data: 'Demand trends, AQI analysis, risk scores, anomaly detection',
+      name: 'Analytics & Advanced Analysis',
+      description: 'Backend calculates analytics, executes MongoDB queries, and processes ML outputs',
+      data: 'Demand trends, AQI analysis, risk scores, anomaly detection, 10 MongoDB queries',
       icon: BarChart3
     },
     {
       step: 5,
+      name: 'AI Synthesis',
+      description: 'Gemini AI analyzes all ML outputs and system state to generate recommendations',
+      data: 'Prioritized actions, cost-benefit analysis, confidence scores, simulation suggestions',
+      icon: Brain
+    },
+    {
+      step: 6,
       name: 'Frontend Display',
-      description: 'React frontend displays data, charts, and visualizations',
-      data: 'Interactive charts, maps, model details, recommendations',
+      description: 'React frontend displays data, charts, visualizations, and AI recommendations',
+      data: 'Interactive charts, maps, model details, prioritized recommendations',
       icon: Eye
     }
   ];
@@ -406,11 +413,15 @@ export default function Guide() {
                 </div>
                 <div className="flow-item">
                   <strong>4. API Endpoints:</strong>
-                  <p>Backend exposes REST APIs: /api/data, /api/analytics, /api/models</p>
+                  <p>Backend exposes REST APIs: /api/data, /api/analytics, /api/models, /api/ai/recommendations</p>
                 </div>
                 <div className="flow-item">
-                  <strong>5. Frontend Display:</strong>
-                  <p>React fetches from APIs and displays interactive charts, maps, and visualizations</p>
+                  <strong>5. AI Synthesis (Gemini):</strong>
+                  <p>Gemini AI analyzes all ML model outputs, risk scores, alerts, and anomalies to generate prioritized, actionable recommendations</p>
+                </div>
+                <div className="flow-item">
+                  <strong>6. Frontend Display:</strong>
+                  <p>React fetches from APIs and displays interactive charts, maps, AI recommendations, and visualizations</p>
                 </div>
               </div>
             </div>
@@ -431,7 +442,7 @@ export default function Guide() {
             </p>
 
             <div className="pages-grid">
-              {pages.map((page, index) => (
+              {pages.sort((a, b) => a.order - b.order).map((page, index) => (
                 <motion.div
                   key={page.id}
                   className="page-card"
@@ -526,8 +537,16 @@ export default function Guide() {
               </div>
 
               <div className="output-card">
-                <h3><Zap size={20} /> Recommendations</h3>
-                <p><strong>Source:</strong> Risk scores, alerts, anomalies</p>
+                <h3><Brain size={20} /> AI Recommendations</h3>
+                <p><strong>Source:</strong> Gemini AI synthesis of all ML models</p>
+                <p><strong>Output:</strong> Prioritized, actionable recommendations with cost-benefit analysis</p>
+                <p><strong>Input:</strong> All 5 ML model outputs, zone risk, alerts, anomalies, AQI status</p>
+                <p><strong>Use Case:</strong> Get intelligent, synthesized actions based on complete system state</p>
+              </div>
+
+              <div className="output-card">
+                <h3><Zap size={20} /> Insights</h3>
+                <p><strong>Source:</strong> Risk scores, alerts, anomalies (rule-based)</p>
                 <p><strong>Output:</strong> Actionable recommendations</p>
                 <p><strong>Examples:</strong> Load balancing, health advisories, inspections</p>
                 <p><strong>Use Case:</strong> Take immediate action on critical issues</p>

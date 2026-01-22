@@ -76,6 +76,19 @@ export const incidentsAPI = {
   getTrends: (days = 30) => api.get('/incidents/analytics/trends', { params: { days } }),
 };
 
+// Queries endpoints
+export const queriesAPI = {
+  listQueries: () => api.get('/queries/list'),
+  executeQuery: (queryId, params = {}) => 
+    api.get(`/queries/execute/${queryId}`, { params }),
+};
+
+// AI Recommendations endpoints
+export const aiAPI = {
+  getRecommendations: () => api.get('/ai/recommendations'),
+  getSystemState: () => api.get('/ai/system-state'),
+};
+
 // Health check (note: this endpoint is at /api/health, not under /api base)
 export const healthCheck = () => axios.get('http://localhost:8000/api/health');
 

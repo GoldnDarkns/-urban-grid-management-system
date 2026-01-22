@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { healthCheck, dataAPI } from '../services/api';
 import StatCard from '../components/StatCard';
+import TronArchitectureDiagram from '../components/TronArchitectureDiagram';
 
 export default function Home() {
   const [status, setStatus] = useState(null);
@@ -238,6 +239,21 @@ export default function Home() {
         <h2 className="section-title">
           <Network size={24} />
           System Architecture
+        </h2>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.8, delay: 0.4 }}
+        >
+          <TronArchitectureDiagram />
+        </motion.div>
+      </section>
+
+      {/* Legacy Architecture (Hidden but keeping for reference) */}
+      <section className="architecture-section container" style={{ display: 'none' }}>
+        <h2 className="section-title">
+          <Network size={24} />
+          System Architecture (Legacy)
         </h2>
         <motion.div
           ref={archRef}

@@ -4,7 +4,8 @@ import {
   Zap, AlertTriangle, TrendingUp, Shield, 
   MapPin, Activity, Wind, Lightbulb, CheckCircle
 } from 'lucide-react';
-import { analyticsAPI, dataAPI } from '../services/api';
+import { analyticsAPI, dataAPI, modelsAPI } from '../services/api';
+import { useZones } from '../utils/useZones';
 
 export default function Insights() {
   const [loading, setLoading] = useState(true);
@@ -12,23 +13,33 @@ export default function Insights() {
   const [alerts, setAlerts] = useState([]);
   const [alertsSummary, setAlertsSummary] = useState(null);
   const [anomalies, setAnomalies] = useState([]);
+  const [lstmPrediction, setLstmPrediction] = useState(null);
+  const [mlModels, setMlModels] = useState(null);
+  const { formatZoneName } = useZones();
 
   useEffect(() => {
     fetchData();
+    // Refresh data every 30 seconds
+    const interval = setInterval(fetchData, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const fetchData = async () => {
     try {
-      const [riskRes, alertsRes, summaryRes, anomaliesRes] = await Promise.all([
+      const [riskRes, alertsRes, summaryRes, anomaliesRes, lstmRes, modelsRes] = await Promise.all([
         analyticsAPI.getZoneRisk(),
         dataAPI.getAlerts(30),
         analyticsAPI.getAlertsSummary(),
-        analyticsAPI.getAnomalies(2.5, 10)
+        analyticsAPI.getAnomalies(2.5, 10),
+        modelsAPI.getLSTMPrediction().catch(() => ({ data: null })), // ML prediction
+        modelsAPI.getOverview().catch(() => ({ data: null })) // ML model metrics
       ]);
       setZoneRisk(riskRes.data.data || []);
       setAlerts(alertsRes.data.alerts || []);
       setAlertsSummary(summaryRes.data);
       setAnomalies(anomaliesRes.data.anomalies || []);
+      setLstmPrediction(lstmRes.data);
+      setMlModels(modelsRes.data);
     } catch (error) {
       console.error('Error fetching insights:', error);
     } finally {
@@ -48,7 +59,7 @@ export default function Insights() {
       recommendations.push({
         type: 'critical',
         icon: Shield,
-        title: `High Risk: ${zone.zone_name}`,
+        title: `High Risk: ${formatZoneName(zone.zone_id) || zone.zone_name}`,
         description: `Zone has risk score of ${zone.risk_score}. ${zone.critical_sites?.includes('hospital') ? 'Contains hospital - prioritize power stability.' : ''} Consider load balancing from adjacent zones.`,
         action: 'Implement load shedding protocol'
       });
@@ -198,6 +209,87 @@ export default function Insights() {
         </motion.div>
       </div>
 
+      {/* ML Model Insights */}
+      {mlModels && (
+        <section className="ml-insights-section">
+          <h2>
+            <Activity size={24} />
+            ML Model Predictions
+          </h2>
+          <div className="ml-cards">
+            {lstmPrediction && !lstmPrediction.error && (
+              <motion.div
+                className="ml-card"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                <div className="ml-header">
+                  <Activity size={20} />
+                  <h3>LSTM Demand Forecast</h3>
+                </div>
+                <div className="ml-content">
+                  <div className="ml-value">
+                    {lstmPrediction.prediction?.toFixed(0) || 'N/A'} <span className="ml-unit">{lstmPrediction.unit || 'kWh'}</span>
+                  </div>
+                  <p className="ml-description">Next hour prediction</p>
+                  {lstmPrediction.last_actual && (
+                    <p className="ml-comparison">
+                      Last actual: {lstmPrediction.last_actual.toFixed(0)} kWh
+                      {lstmPrediction.prediction && (
+                        <span className={lstmPrediction.prediction > lstmPrediction.last_actual ? 'trend-up' : 'trend-down'}>
+                          {lstmPrediction.prediction > lstmPrediction.last_actual ? ' ↗' : ' ↘'}
+                        </span>
+                      )}
+                    </p>
+                  )}
+                </div>
+              </motion.div>
+            )}
+            {mlModels.models && mlModels.models.slice(0, 3).map((model, idx) => (
+              <motion.div
+                key={model.id || idx}
+                className="ml-card"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.1 }}
+              >
+                <div className="ml-header">
+                  <Activity size={20} />
+                  <h3>{model.name}</h3>
+                </div>
+                <div className="ml-content">
+                  {model.metrics && (
+                    <div className="ml-metrics">
+                      {model.metrics.r2_score !== null && model.metrics.r2_score !== undefined && (
+                        <div className="metric-item">
+                          <span>R² Score:</span>
+                          <strong>{model.metrics.r2_score.toFixed(3)}</strong>
+                        </div>
+                      )}
+                      {model.metrics.rmse && (
+                        <div className="metric-item">
+                          <span>RMSE:</span>
+                          <strong>{model.metrics.rmse.toFixed(2)}</strong>
+                        </div>
+                      )}
+                      {model.metrics.mae && (
+                        <div className="metric-item">
+                          <span>MAE:</span>
+                          <strong>{model.metrics.mae.toFixed(2)}</strong>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <p className="ml-status">
+                    Status: <span className={model.status === 'trained' ? 'status-trained' : 'status-pending'}>{model.status}</span>
+                  </p>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Recommendations Section */}
       <section className="recommendations-section">
         <h2>
@@ -246,7 +338,7 @@ export default function Insights() {
                 transition={{ delay: index * 0.1 }}
               >
                 <div className="zone-header">
-                  <h3>{zone.zone_name}</h3>
+                  <h3>{formatZoneName(zone.zone_id) || zone.zone_name}</h3>
                   <span className="risk-badge">Risk: {zone.risk_score}</span>
                 </div>
                 <div className="zone-details">
@@ -305,7 +397,7 @@ export default function Insights() {
                   {alert.ts ? new Date(alert.ts).toLocaleString() : 'Unknown time'}
                 </div>
                 <div className="emergency-content">
-                  <span className="emergency-zone">{alert.zone_id}</span>
+                  <span className="emergency-zone">{formatZoneName(alert.zone_id) || alert.zone_id}</span>
                   <span className="emergency-type">{alert.type}</span>
                   <p className="emergency-message">{alert.message}</p>
                 </div>
@@ -338,7 +430,7 @@ export default function Insights() {
                 <div className="anomaly-details">
                   <div className="anomaly-row">
                     <span>Zone</span>
-                    <strong>{anomaly.zone_id}</strong>
+                    <strong>{formatZoneName(anomaly.zone_id) || anomaly.zone_id}</strong>
                   </div>
                   <div className="anomaly-row">
                     <span>Consumption</span>
@@ -910,6 +1002,123 @@ export default function Insights() {
           font-family: var(--font-mono);
           font-size: 0.875rem;
           color: var(--text-secondary);
+        }
+
+        /* ML Insights Section */
+        .ml-insights-section {
+          margin-bottom: 2rem;
+        }
+
+        .ml-insights-section h2 {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          margin-bottom: 1rem;
+          color: var(--accent-primary);
+        }
+
+        .ml-cards {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+          gap: 1rem;
+          margin-bottom: 1rem;
+        }
+
+        .ml-card {
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          padding: 1.25rem;
+          border-left: 4px solid var(--accent-primary);
+        }
+
+        .ml-header {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          margin-bottom: 1rem;
+        }
+
+        .ml-header h3 {
+          font-size: 0.95rem;
+          color: var(--accent-primary);
+        }
+
+        .ml-content {
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+        }
+
+        .ml-value {
+          font-size: 2rem;
+          font-weight: 700;
+          font-family: var(--font-mono);
+          color: var(--accent-primary);
+          line-height: 1;
+        }
+
+        .ml-unit {
+          font-size: 1rem;
+          color: var(--text-secondary);
+          font-weight: 400;
+        }
+
+        .ml-description {
+          font-size: 0.875rem;
+          color: var(--text-secondary);
+          margin: 0;
+        }
+
+        .ml-comparison {
+          font-size: 0.8rem;
+          color: var(--text-muted);
+          margin: 0;
+        }
+
+        .trend-up {
+          color: var(--accent-danger);
+        }
+
+        .trend-down {
+          color: var(--accent-primary);
+        }
+
+        .ml-metrics {
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+        }
+
+        .metric-item {
+          display: flex;
+          justify-content: space-between;
+          font-size: 0.875rem;
+        }
+
+        .metric-item span {
+          color: var(--text-secondary);
+        }
+
+        .metric-item strong {
+          color: var(--accent-primary);
+          font-family: var(--font-mono);
+        }
+
+        .ml-status {
+          font-size: 0.8rem;
+          margin: 0;
+          margin-top: 0.5rem;
+        }
+
+        .status-trained {
+          color: var(--accent-primary);
+          font-weight: 600;
+        }
+
+        .status-pending {
+          color: var(--accent-warning);
+          font-weight: 600;
         }
       `}</style>
     </div>

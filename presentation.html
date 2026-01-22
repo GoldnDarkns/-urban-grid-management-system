@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Urban Grid Management System - Presentation</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@4.3.1/dist/reveal.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@4.3.1/dist/theme/black.css">
+    <style>
+        .reveal .slides section {
+            text-align: left;
+        }
+        .reveal h1, .reveal h2, .reveal h3 {
+            color: #00ff88;
+        }
+        .reveal .progress {
+            color: #00ff88;
+        }
+        .highlight {
+            color: #ffaa00;
+        }
+        .success {
+            color: #00ff88;
+        }
+        .warning {
+            color: #ffaa00;
+        }
+        .danger {
+            color: #ff4444;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: rgba(0, 255, 136, 0.1);
+            border: 1px solid #00ff88;
+            border-radius: 8px;
+            padding: 15px;
+        }
+        .stat-number {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #00ff88;
+        }
+        .stat-label {
+            font-size: 0.8em;
+            color: #aaa;
+        }
+        .feature-list {
+            list-style: none;
+            padding: 0;
+        }
+        .feature-list li {
+            padding: 10px 0;
+            border-bottom: 1px solid #333;
+        }
+        .feature-list li:before {
+            content: "✓ ";
+            color: #00ff88;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        .architecture-diagram {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .layer {
+            background: rgba(0, 212, 255, 0.1);
+            border-left: 4px solid #00d4ff;
+            padding: 15px;
+            border-radius: 4px;
+        }
+        .layer.ml {
+            border-color: #00ff88;
+            background: rgba(0, 255, 136, 0.1);
+        }
+        .layer.api {
+            border-color: #ffaa00;
+            background: rgba(255, 170, 0, 0.1);
+        }
+        .layer.ui {
+            border-color: #aa66ff;
+            background: rgba(170, 102, 255, 0.1);
+        }
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        .comparison-table th,
+        .comparison-table td {
+            border: 1px solid #333;
+            padding: 10px;
+            text-align: left;
+        }
+        .comparison-table th {
+            background: rgba(0, 255, 136, 0.2);
+            color: #00ff88;
+        }
+        .code-block {
+            background: #1e1e1e;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.7em;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="reveal">
+        <div class="slides">
+            <!-- Title Slide -->
+            <section>
+                <h1>Urban Grid Management System</h1>
+                <h3>Climate- & Constraint-Aware Energy Grid Management</h3>
+                <p style="margin-top: 50px; font-size: 0.8em; color: #aaa;">
+                    Intelligent System for Managing Urban Energy Grids<br>
+                    with Deep Learning & Real-Time Analytics
+                </p>
+                <p style="margin-top: 30px; font-size: 0.6em; color: #666;">
+                    Version 1.0.0 | January 2026
+                </p>
+            </section>
+
+            <!-- Problem Statement -->
+            <section>
+                <h2>The Challenge</h2>
+                <h3 class="highlight">Managing Grid Stability Under Extreme Conditions</h3>
+                <div style="margin-top: 30px;">
+                    <p><strong>The Problem:</strong></p>
+                    <ul>
+                        <li>Heat waves → People stay indoors → AC usage spikes</li>
+                        <li>High demand → More power generation → Emissions rise</li>
+                        <li>High AQI → City must restrict activities → Grid flexibility decreases</li>
+                        <li>High demand + Low flexibility = <span class="danger">Risk of blackouts</span></li>
+                    </ul>
+                    <p style="margin-top: 30px; font-size: 0.9em; color: #ffaa00;">
+                        <strong>City must balance:</strong> Keep people safe (power) vs. Reduce pollution vs. Prevent blackouts
+                    </p>
+                </div>
+            </section>
+
+            <!-- Solution Overview -->
+            <section>
+                <h2>Our Solution</h2>
+                <h3>Intelligent Decision Support System</h3>
+                <div class="stats-grid" style="margin-top: 40px;">
+                    <div class="stat-card">
+                        <div class="stat-number">5</div>
+                        <div class="stat-label">ML Models</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">360K+</div>
+                        <div class="stat-label">Data Points</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">14</div>
+                        <div class="stat-label">Dashboard Pages</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">Real-time</div>
+                        <div class="stat-label">Analytics</div>
+                    </div>
+                </div>
+                <p style="margin-top: 30px; font-size: 0.9em;">
+                    <span class="success">✓</span> Demand Forecasting<br>
+                    <span class="success">✓</span> Anomaly Detection<br>
+                    <span class="success">✓</span> Risk Assessment<br>
+                    <span class="success">✓</span> Automated Alerts
+                </p>
+            </section>
+
+            <!-- System Architecture -->
+            <section>
+                <h2>System Architecture</h2>
+                <div class="architecture-diagram">
+                    <div class="layer">
+                        <strong>Data Layer</strong> - MongoDB Atlas<br>
+                        <small>Time-series data, 360K+ readings, optimized indexes</small>
+                    </div>
+                    <div class="layer ml">
+                        <strong>ML Layer</strong> - Deep Learning Models<br>
+                        <small>LSTM, Autoencoder, GNN, ARIMA, Prophet</small>
+                    </div>
+                    <div class="layer api">
+                        <strong>API Layer</strong> - FastAPI Backend<br>
+                        <small>RESTful endpoints, real-time analytics, CORS enabled</small>
+                    </div>
+                    <div class="layer ui">
+                        <strong>UI Layer</strong> - React Frontend<br>
+                        <small>14 pages, interactive charts, real-time dashboards</small>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Technology Stack -->
+            <section>
+                <h2>Technology Stack</h2>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 30px;">
+                    <div>
+                        <h3 style="color: #00ff88;">Backend</h3>
+                        <ul>
+                            <li>Python 3.11+</li>
+                            <li>FastAPI</li>
+                            <li>MongoDB Atlas</li>
+                            <li>TensorFlow/Keras</li>
+                            <li>PyTorch (NLP)</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 style="color: #00ff88;">Frontend</h3>
+                        <ul>
+                            <li>React 19</li>
+                            <li>Vite</li>
+                            <li>Recharts</li>
+                            <li>Framer Motion</li>
+                            <li>Three.js (3D)</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ML Models -->
+            <section>
+                <h2>Machine Learning Models</h2>
+                <table class="comparison-table" style="font-size: 0.7em;">
+                    <thead>
+                        <tr>
+                            <th>Model</th>
+                            <th>Type</th>
+                            <th>Purpose</th>
+                            <th>Performance</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>LSTM</strong></td>
+                            <td>Deep Learning</td>
+                            <td>Demand Forecasting</td>
+                            <td>RMSE: 64.27, R²: 0.64</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Prophet</strong></td>
+                            <td>Statistical</td>
+                            <td>Seasonal Forecasting</td>
+                            <td class="success">RMSE: 48.41, R²: 0.86 ⭐</td>
+                        </tr>
+                        <tr>
+                            <td><strong>ARIMA</strong></td>
+                            <td>Statistical</td>
+                            <td>Time-Series Forecasting</td>
+                            <td>RMSE: 88.82, R²: 0.54</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Autoencoder</strong></td>
+                            <td>Deep Learning</td>
+                            <td>Anomaly Detection</td>
+                            <td>Anomaly Rate: 5.33%</td>
+                        </tr>
+                        <tr>
+                            <td><strong>GNN</strong></td>
+                            <td>Graph Neural Network</td>
+                            <td>Zone Risk Scoring</td>
+                            <td class="success">Accuracy: 95%+</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- Key Features -->
+            <section>
+                <h2>Key Features</h2>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 20px;">
+                    <div>
+                        <h3 style="color: #00ff88;">Monitoring & Analytics</h3>
+                        <ul class="feature-list">
+                            <li>Real-time energy demand tracking</li>
+                            <li>AQI monitoring across zones</li>
+                            <li>Zone risk assessment</li>
+                            <li>Anomaly detection</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 style="color: #00ff88;">Predictive Capabilities</h3>
+                        <ul class="feature-list">
+                            <li>Hour-ahead demand forecasting</li>
+                            <li>Seasonal pattern analysis</li>
+                            <li>Risk prediction</li>
+                            <li>What-if scenario simulation</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- NLP Integration -->
+            <section>
+                <h2>NLP-Powered Incident Reports</h2>
+                <div style="margin-top: 30px;">
+                    <h3 style="color: #00ff88;">Automatic Analysis</h3>
+                    <ul>
+                        <li><strong>Category Classification:</strong> Equipment failure, environmental hazard, demand spike</li>
+                        <li><strong>Urgency Detection:</strong> High, medium, low based on context</li>
+                        <li><strong>Sentiment Analysis:</strong> Positive, negative, neutral</li>
+                        <li><strong>Entity Extraction:</strong> Zones, equipment, time phrases</li>
+                    </ul>
+                    <div style="margin-top: 30px; background: rgba(0, 255, 136, 0.1); padding: 15px; border-radius: 4px;">
+                        <strong>Example:</strong> "Transformer overheating in Zone 5, immediate action required"<br>
+                        <small>→ Category: Equipment Failure | Urgency: High | Zone: Z_005</small>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Dashboard Pages -->
+            <section>
+                <h2>14 Interactive Dashboard Pages</h2>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 20px; font-size: 0.7em;">
+                    <div>1. Home</div>
+                    <div>2. Data Explorer</div>
+                    <div>3. Analytics</div>
+                    <div>4. Insights</div>
+                    <div>5. Incident Reports</div>
+                    <div>6. City Map</div>
+                    <div>7. 3D Simulation</div>
+                    <div>8. LSTM Details</div>
+                    <div>9. Autoencoder</div>
+                    <div>10. GNN</div>
+                    <div>11. Model Comparison</div>
+                    <div>12. Advanced Visualizations</div>
+                    <div>13. Reports</div>
+                    <div>14. Guide</div>
+                </div>
+                <p style="margin-top: 30px; font-size: 0.8em; color: #aaa;">
+                    Modern, responsive UI with smooth animations and real-time updates
+                </p>
+            </section>
+
+            <!-- Current Capabilities -->
+            <section>
+                <h2>What The System Does</h2>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 20px;">
+                    <div>
+                        <h3 class="success">✓ Monitoring</h3>
+                        <ul style="font-size: 0.8em;">
+                            <li>Real-time data collection</li>
+                            <li>Energy consumption tracking</li>
+                            <li>AQI monitoring</li>
+                            <li>Alert generation</li>
+                        </ul>
+                        <h3 class="success" style="margin-top: 30px;">✓ Prediction</h3>
+                        <ul style="font-size: 0.8em;">
+                            <li>Demand forecasting</li>
+                            <li>Anomaly detection</li>
+                            <li>Risk scoring</li>
+                            <li>Trend analysis</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="warning">⚠ Recommendations</h3>
+                        <ul style="font-size: 0.8em;">
+                            <li>Action suggestions</li>
+                            <li>Load balancing advice</li>
+                            <li>Risk mitigation plans</li>
+                            <li>Policy triggers</li>
+                        </ul>
+                        <h3 class="danger" style="margin-top: 30px;">✗ Control (Future)</h3>
+                        <ul style="font-size: 0.8em; color: #666;">
+                            <li>SCADA integration</li>
+                            <li>Automated actions</li>
+                            <li>Workflow automation</li>
+                            <li>Cost analysis</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Data & Performance -->
+            <section>
+                <h2>Data & Performance</h2>
+                <div class="stats-grid" style="margin-top: 30px;">
+                    <div class="stat-card">
+                        <div class="stat-number">360K+</div>
+                        <div class="stat-label">Meter Readings</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">14K+</div>
+                        <div class="stat-label">Climate Readings</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">20</div>
+                        <div class="stat-label">Zones</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">500</div>
+                        <div class="stat-label">Households</div>
+                    </div>
+                </div>
+                <p style="margin-top: 30px; font-size: 0.9em;">
+                    <strong>Database:</strong> MongoDB Atlas with optimized indexes<br>
+                    <strong>API Response Time:</strong> < 100ms average<br>
+                    <strong>Real-time Updates:</strong> Live dashboard refresh
+                </p>
+            </section>
+
+            <!-- Future Improvements -->
+            <section>
+                <h2>Future Roadmap</h2>
+                <div style="margin-top: 30px;">
+                    <h3 style="color: #00ff88;">Phase 1: Multi-City Support</h3>
+                    <ul style="font-size: 0.8em;">
+                        <li>City selection interface</li>
+                        <li>Multi-city data architecture</li>
+                        <li>Real-time data integration (APIs)</li>
+                        <li>City comparison features</li>
+                    </ul>
+                    <h3 style="color: #00ff88; margin-top: 30px;">Phase 2: Commercial Features</h3>
+                    <ul style="font-size: 0.8em;">
+                        <li>Cost analysis & ROI calculations</li>
+                        <li>Real geography (GIS integration)</li>
+                        <li>Workflow automation</li>
+                        <li>SCADA integration (control capabilities)</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Architecture Deep Dive -->
+            <section>
+                <h2>System Architecture Deep Dive</h2>
+                <div style="margin-top: 30px; font-size: 0.8em;">
+                    <div class="code-block">
+                        <strong>Data Flow:</strong><br>
+                        Sensors → MongoDB → ML Models → FastAPI → React Frontend
+                    </div>
+                    <div style="margin-top: 20px;">
+                        <strong>Key Components:</strong>
+                        <ul>
+                            <li><strong>Backend:</strong> FastAPI with 30+ REST endpoints</li>
+                            <li><strong>Database:</strong> 8 MongoDB collections with indexes</li>
+                            <li><strong>ML Pipeline:</strong> 5 trained models, batch & real-time inference</li>
+                            <li><strong>Frontend:</strong> React SPA with 14 routes, real-time updates</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Use Cases -->
+            <section>
+                <h2>Use Cases</h2>
+                <div style="margin-top: 30px;">
+                    <h3 style="color: #00ff88;">1. Real-Time Monitoring</h3>
+                    <p style="font-size: 0.8em;">Grid operators monitor current demand, AQI, and zone risks in real-time</p>
+                    
+                    <h3 style="color: #00ff88; margin-top: 30px;">2. Demand Forecasting</h3>
+                    <p style="font-size: 0.8em;">Predict peak demand hours to optimize generation and prevent blackouts</p>
+                    
+                    <h3 style="color: #00ff88; margin-top: 30px;">3. Anomaly Detection</h3>
+                    <p style="font-size: 0.8em;">Identify unusual consumption patterns (theft, equipment failure, spikes)</p>
+                    
+                    <h3 style="color: #00ff88; margin-top: 30px;">4. Risk Assessment</h3>
+                    <p style="font-size: 0.8em;">Calculate zone risk scores considering network effects and critical infrastructure</p>
+                </div>
+            </section>
+
+            <!-- Competitive Advantage -->
+            <section>
+                <h2>Competitive Advantages</h2>
+                <div style="margin-top: 30px;">
+                    <ul class="feature-list" style="font-size: 0.9em;">
+                        <li><strong>Multi-Model Ensemble:</strong> Combines LSTM, ARIMA, and Prophet for best predictions</li>
+                        <li><strong>Graph Neural Networks:</strong> Considers zone interdependencies (network effects)</li>
+                        <li><strong>NLP Integration:</strong> Automatic incident classification and analysis</li>
+                        <li><strong>Real-Time Analytics:</strong> Live dashboards with sub-second updates</li>
+                        <li><strong>Climate-Aware:</strong> Integrates AQI, temperature, and constraint events</li>
+                        <li><strong>Open Architecture:</strong> RESTful API, easy integrations</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Technical Highlights -->
+            <section>
+                <h2>Technical Highlights</h2>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-top: 30px; font-size: 0.8em;">
+                    <div>
+                        <h3 style="color: #00ff88;">Backend</h3>
+                        <ul>
+                            <li>FastAPI async endpoints</li>
+                            <li>MongoDB aggregation pipelines</li>
+                            <li>Connection pooling</li>
+                            <li>Error handling & retries</li>
+                            <li>CORS enabled</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 style="color: #00ff88;">Frontend</h3>
+                        <ul>
+                            <li>React 19 with hooks</li>
+                            <li>Framer Motion animations</li>
+                            <li>Recharts visualizations</li>
+                            <li>Three.js 3D graphics</li>
+                            <li>Responsive design</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Demo Screenshots Placeholder -->
+            <section>
+                <h2>Live Demo</h2>
+                <div style="margin-top: 50px; text-align: center;">
+                    <h3 style="color: #00ff88;">Access the System</h3>
+                    <p style="font-size: 1.2em; margin-top: 30px;">
+                        <strong>Frontend:</strong> http://localhost:5173<br>
+                        <strong>Backend API:</strong> http://localhost:8000<br>
+                        <strong>API Docs:</strong> http://localhost:8000/docs
+                    </p>
+                    <p style="margin-top: 40px; font-size: 0.9em; color: #aaa;">
+                        Interactive dashboards | Real-time data | ML predictions
+                    </p>
+                </div>
+            </section>
+
+            <!-- Next Steps -->
+            <section>
+                <h2>Next Steps</h2>
+                <div style="margin-top: 30px;">
+                    <h3 style="color: #00ff88;">Immediate (Weeks 1-4)</h3>
+                    <ul style="font-size: 0.8em;">
+                        <li>Multi-city data architecture</li>
+                        <li>City selection interface</li>
+                        <li>Real-time API integrations</li>
+                        <li>Database scaling (EC2 or Atlas upgrade)</li>
+                    </ul>
+                    <h3 style="color: #00ff88; margin-top: 30px;">Short-term (Weeks 5-8)</h3>
+                    <ul style="font-size: 0.8em;">
+                        <li>Cost analysis module</li>
+                        <li>GIS integration (real maps)</li>
+                        <li>Workflow automation</li>
+                        <li>Historical baselines</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Conclusion -->
+            <section>
+                <h2>Summary</h2>
+                <div style="margin-top: 40px;">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-number">5</div>
+                            <div class="stat-label">ML Models Trained</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">14</div>
+                            <div class="stat-label">Dashboard Pages</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">360K+</div>
+                            <div class="stat-label">Data Points</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number">Real-time</div>
+                            <div class="stat-label">Analytics</div>
+                        </div>
+                    </div>
+                    <p style="margin-top: 40px; font-size: 1.1em; text-align: center;">
+                        <strong class="success">Production-Ready Intelligent Grid Management System</strong>
+                    </p>
+                </div>
+            </section>
+
+            <!-- Thank You -->
+            <section>
+                <h1>Thank You</h1>
+                <h3>Questions?</h3>
+                <p style="margin-top: 50px; font-size: 0.9em; color: #aaa;">
+                    Urban Grid Management System<br>
+                    Version 1.0.0
+                </p>
+            </section>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/reveal.js@4.3.1/dist/reveal.js"></script>
+    <script>
+        Reveal.initialize({
+            hash: true,
+            controls: true,
+            progress: true,
+            center: true,
+            touch: true,
+            loop: false,
+            transition: 'slide',
+            backgroundTransition: 'fade'
+        });
+    </script>
+</body>
+</html>

@@ -14,6 +14,8 @@ import Simulation3D from './pages/Simulation3D';
 import ModelComparison from './pages/ModelComparison';
 import Reports from './pages/Reports';
 import AdvancedViz from './pages/AdvancedViz';
+import AdvancedAnalytics from './pages/AdvancedAnalytics';
+import AIRecommendations from './pages/AIRecommendations';
 import Guide from './pages/Guide';
 import IncidentReports from './pages/IncidentReports';
 
@@ -38,6 +40,8 @@ function App() {
             <Route path="/insights" element={<Insights />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/visualizations" element={<AdvancedViz />} />
+            <Route path="/advanced-analytics" element={<AdvancedAnalytics />} />
+            <Route path="/ai-recommendations" element={<AIRecommendations />} />
             <Route path="/guide" element={<Guide />} />
             <Route path="/incidents" element={<IncidentReports />} />
           </Routes>

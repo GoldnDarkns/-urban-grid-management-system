@@ -6,21 +6,20 @@ import {
   ChevronLeft, ChevronRight
 } from 'lucide-react';
 
+// Logical navigation flow: Overview → Learn → Data → Analytics → Advanced → AI → Actions → Visualizations
 const navItems = [
-  { path: '/', label: 'Home', icon: Home },
-  { path: '/guide', label: 'Guide', icon: BookOpen },
-  { path: '/data', label: 'Data', icon: Database },
-  { path: '/analytics', label: 'Analytics', icon: BarChart3 },
-  { path: '/lstm', label: 'LSTM', icon: Activity },
-  { path: '/autoencoder', label: 'Autoencoder', icon: AlertTriangle },
-  { path: '/gnn', label: 'GNN', icon: Network },
-  { path: '/comparison', label: 'Compare', icon: GitCompare },
-  { path: '/insights', label: 'Insights', icon: Zap },
-  { path: '/incidents', label: 'Incidents', icon: ClipboardList },
-  { path: '/citymap', label: 'City Map', icon: Map },
-  { path: '/simulation3d', label: '3D City', icon: Box },
-  { path: '/visualizations', label: 'Viz', icon: Eye },
-  { path: '/reports', label: 'Reports', icon: FileText },
+  { path: '/', label: 'Home', icon: Home, order: 1 },
+  { path: '/guide', label: 'Guide', icon: BookOpen, order: 2 },
+  { path: '/data', label: 'Data', icon: Database, order: 3 },
+  { path: '/analytics', label: 'Analytics', icon: BarChart3, order: 4 },
+  { path: '/advanced-analytics', label: 'Advanced', icon: Brain, order: 5 },
+  { path: '/ai-recommendations', label: 'AI Recommendations', icon: Brain, order: 6 },
+  { path: '/insights', label: 'Insights', icon: Zap, order: 7 },
+  { path: '/incidents', label: 'Incidents', icon: ClipboardList, order: 8 },
+  { path: '/citymap', label: 'City Map', icon: Map, order: 9 },
+  { path: '/simulation3d', label: '3D City', icon: Box, order: 10 },
+  { path: '/visualizations', label: 'Viz', icon: Eye, order: 11 },
+  { path: '/reports', label: 'Reports', icon: FileText, order: 12 },
 ];
 
 export default function Navbar() {
@@ -78,7 +77,7 @@ export default function Navbar() {
           className="nav-links"
           onScroll={onNavScroll}
         >
-          {navItems.map(({ path, label, icon: Icon }) => (
+          {navItems.sort((a, b) => (a.order || 999) - (b.order || 999)).map(({ path, label, icon: Icon }) => (
             <Link
               key={path}
               to={path}

@@ -2,8 +2,10 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { 
   Activity, Clock, Map, GitCompare, Network, Play, Pause, 
-  RotateCcw, ChevronRight, Zap, AlertTriangle, TrendingUp, Info
+  RotateCcw, ChevronRight, Zap, AlertTriangle, TrendingUp, Info,
+  Database, Code, PlayCircle, Loader
 } from 'lucide-react';
+import { queriesAPI, analyticsAPI, dataAPI } from '../services/api';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, Cell
@@ -199,7 +201,32 @@ function RecoveryTimeline() {
 function HeatmapOverlay() {
   const [metric, setMetric] = useState('demand');
   const [hoveredZone, setHoveredZone] = useState(null);
+  const [realData, setRealData] = useState({ zones: [], demand: [], aqi: [], risk: [] });
   const canvasRef = useRef(null);
+
+  useEffect(() => {
+    fetchRealData();
+  }, []);
+
+  const fetchRealData = async () => {
+    try {
+      const [zonesRes, demandRes, aqiRes, riskRes] = await Promise.all([
+        dataAPI.getZones().catch(() => ({ data: { zones: [] } })),
+        analyticsAPI.getDemandByZone().catch(() => ({ data: { data: [] } })),
+        analyticsAPI.getAQIByZone().catch(() => ({ data: { data: {} } })),
+        analyticsAPI.getZoneRisk().catch(() => ({ data: { data: [] } }))
+      ]);
+      
+      setRealData({
+        zones: zonesRes.data.zones || [],
+        demand: demandRes.data.data || [],
+        aqi: aqiRes.data.data || {},
+        risk: riskRes.data.data || []
+      });
+    } catch (error) {
+      console.error('Error fetching heatmap data:', error);
+    }
+  };
 
   const metrics = {
     demand: { 
@@ -240,51 +267,58 @@ function HeatmapOverlay() {
     },
   };
 
-  // Generate zone data with more meaningful patterns
+  // Generate zone data from real ML outputs
   const zones = useMemo(() => {
     const data = [];
+    const realZones = realData.zones.slice(0, 64); // Limit to 64 zones for 8x8 grid
     const gridSize = 8;
-    for (let y = 0; y < gridSize; y++) {
-      for (let x = 0; x < gridSize; x++) {
-        const distFromCenter = Math.sqrt(Math.pow(x - gridSize/2, 2) + Math.pow(y - gridSize/2, 2));
-        const isIndustrial = (x < 2 && y > 5);
-        const isDowntown = (distFromCenter < 2);
-        const isResidential = (x > 5 || y < 2);
-        
-        let baseValue;
-        let zoneName;
-        let zoneType;
-        
-        if (metric === 'demand') {
-          baseValue = isDowntown ? 70 + Math.random() * 30 : 
-                     isIndustrial ? 60 + Math.random() * 25 :
-                     isResidential ? 20 + Math.random() * 25 :
-                     35 + Math.random() * 30;
-          zoneType = isDowntown ? 'Commercial' : isIndustrial ? 'Industrial' : isResidential ? 'Residential' : 'Mixed';
-        } else if (metric === 'aqi') {
-          baseValue = isIndustrial ? 120 + Math.random() * 60 :
-                     isDowntown ? 80 + Math.random() * 40 :
-                     40 + Math.random() * 40;
-          zoneType = isIndustrial ? 'Industrial' : isDowntown ? 'Commercial' : 'Residential';
-        } else {
-          baseValue = isDowntown ? 40 + Math.random() * 35 :
-                     isIndustrial ? 50 + Math.random() * 30 :
-                     15 + Math.random() * 25;
-          zoneType = isDowntown ? 'High Priority' : isIndustrial ? 'Industrial' : 'Standard';
-        }
-        
-        zoneName = `Zone ${String.fromCharCode(65 + y)}${x + 1}`;
-        
-        data.push({
-          x, y,
-          value: Math.round(baseValue),
-          name: zoneName,
-          type: zoneType
-        });
+    
+    realZones.forEach((zone, idx) => {
+      const x = idx % gridSize;
+      const y = Math.floor(idx / gridSize);
+      
+      let value = 0;
+      let zoneName = zone.name || zone._id;
+      let zoneType = zone.zone_type || 'Standard';
+      
+      if (metric === 'demand') {
+        // Use real demand data
+        const zoneDemand = realData.demand.find(d => d.zone_id === zone._id);
+        value = zoneDemand ? (zoneDemand.avg_kwh || zoneDemand.total_kwh || 0) : 0;
+      } else if (metric === 'aqi') {
+        // Use real AQI data
+        const zoneAQI = realData.aqi[zone._id];
+        value = zoneAQI ? (zoneAQI.avg_aqi || 0) : 50; // Default to moderate
+      } else if (metric === 'risk') {
+        // Use real risk scores from GNN/analytics
+        const zoneRisk = realData.risk.find(r => r.zone_id === zone._id);
+        value = zoneRisk ? (zoneRisk.risk_score || 0) : 20; // Default to low risk
       }
+      
+      data.push({
+        x, y,
+        value: Math.round(value),
+        name: zoneName,
+        type: zoneType,
+        zoneId: zone._id
+      });
+    });
+    
+    // Fill remaining slots if we have fewer than 64 zones
+    while (data.length < 64) {
+      const idx = data.length;
+      const x = idx % gridSize;
+      const y = Math.floor(idx / gridSize);
+      data.push({
+        x, y,
+        value: 0,
+        name: `Zone ${idx + 1}`,
+        type: 'Empty'
+      });
     }
+    
     return data;
-  }, [metric]);
+  }, [metric, realData]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -420,19 +454,86 @@ function HeatmapOverlay() {
 
 // ==================== ZONE COMPARISON ====================
 function ZoneComparison() {
-  const [zone1, setZone1] = useState('downtown');
-  const [zone2, setZone2] = useState('industrial');
+  const [zone1, setZone1] = useState(null);
+  const [zone2, setZone2] = useState(null);
+  const [zonesData, setZonesData] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const zoneData = {
-    downtown: { name: 'Downtown', demand: 2450, aqi: 85, risk: 35, population: 45000, efficiency: 78 },
-    industrial: { name: 'Industrial', demand: 3200, aqi: 120, risk: 55, population: 12000, efficiency: 65 },
-    residential: { name: 'Residential', demand: 1800, aqi: 65, risk: 25, population: 85000, efficiency: 82 },
-    medical: { name: 'Medical District', demand: 1950, aqi: 55, risk: 40, population: 8000, efficiency: 90 },
-    airport: { name: 'Airport', demand: 2800, aqi: 95, risk: 45, population: 5000, efficiency: 72 },
+  useEffect(() => {
+    fetchZonesData();
+  }, []);
+
+  const fetchZonesData = async () => {
+    try {
+      const [zonesRes, demandRes, aqiRes, riskRes] = await Promise.all([
+        dataAPI.getZones().catch(() => ({ data: { zones: [] } })),
+        analyticsAPI.getDemandByZone().catch(() => ({ data: { data: [] } })),
+        analyticsAPI.getAQIByZone().catch(() => ({ data: { data: {} } })),
+        analyticsAPI.getZoneRisk().catch(() => ({ data: { data: [] } }))
+      ]);
+      
+      const zones = zonesRes.data.zones || [];
+      const demand = demandRes.data.data || [];
+      const aqi = aqiRes.data.data || {};
+      const risk = riskRes.data.data || [];
+      
+      const combined = zones.slice(0, 10).map(zone => {
+        const zoneDemand = demand.find(d => d.zone_id === zone._id);
+        const zoneAQI = aqi[zone._id];
+        const zoneRisk = risk.find(r => r.zone_id === zone._id);
+        
+        return {
+          id: zone._id,
+          name: zone.name || zone._id,
+          demand: zoneDemand ? (zoneDemand.avg_kwh || zoneDemand.total_kwh || 0) : 0,
+          aqi: zoneAQI ? (zoneAQI.avg_aqi || 0) : 0,
+          risk: zoneRisk ? (zoneRisk.risk_score || 0) : 0,
+          population: zone.population_est || 0,
+          efficiency: zoneDemand && zoneDemand.avg_kwh ? Math.min(100, (zoneDemand.avg_kwh / 100) * 100) : 0
+        };
+      });
+      
+      setZonesData(combined);
+      if (combined.length >= 2) {
+        setZone1(combined[0].id);
+        setZone2(combined[1].id);
+      }
+      setLoading(false);
+    } catch (error) {
+      console.error('Error fetching zone comparison data:', error);
+      setLoading(false);
+    }
   };
 
-  const z1 = zoneData[zone1];
-  const z2 = zoneData[zone2];
+  const zoneData = zonesData.reduce((acc, zone) => {
+    acc[zone.id] = zone;
+    return acc;
+  }, {});
+
+  const z1 = zone1 ? zoneData[zone1] : null;
+  const z2 = zone2 ? zoneData[zone2] : null;
+
+  if (loading) {
+    return (
+      <div className="viz-section zone-comparison">
+        <div className="section-header">
+          <h3><GitCompare size={20} /> Zone Comparison</h3>
+          <p>Loading zone data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!z1 || !z2 || zonesData.length === 0) {
+    return (
+      <div className="viz-section zone-comparison">
+        <div className="section-header">
+          <h3><GitCompare size={20} /> Zone Comparison</h3>
+          <p>Select two zones to compare</p>
+        </div>
+      </div>
+    );
+  }
 
   const comparisonMetrics = [
     { key: 'demand', label: 'Demand (kW)', max: 4000 },
@@ -451,18 +552,18 @@ function ZoneComparison() {
       <div className="zone-selectors">
         <div className="zone-select">
           <label>Zone A</label>
-          <select value={zone1} onChange={(e) => setZone1(e.target.value)}>
-            {Object.entries(zoneData).map(([key, z]) => (
-              <option key={key} value={key}>{z.name}</option>
+          <select value={zone1 || ''} onChange={(e) => setZone1(e.target.value)}>
+            {zonesData.map((z) => (
+              <option key={z.id} value={z.id}>{z.name}</option>
             ))}
           </select>
         </div>
         <div className="vs-badge">VS</div>
         <div className="zone-select">
           <label>Zone B</label>
-          <select value={zone2} onChange={(e) => setZone2(e.target.value)}>
-            {Object.entries(zoneData).map(([key, z]) => (
-              <option key={key} value={key}>{z.name}</option>
+          <select value={zone2 || ''} onChange={(e) => setZone2(e.target.value)}>
+            {zonesData.map((z) => (
+              <option key={z.id} value={z.id}>{z.name}</option>
             ))}
           </select>
         </div>
@@ -685,6 +786,402 @@ function NetworkFlow() {
   );
 }
 
+// ==================== MONGODB QUERIES ====================
+function MongoDBQueries() {
+  const [queries, setQueries] = useState([]);
+  const [selectedQuery, setSelectedQuery] = useState(null);
+  const [results, setResults] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [params, setParams] = useState({ zone_id: 'Z_001', limit: 10, hours: 24 });
+
+  useEffect(() => {
+    loadQueries();
+  }, []);
+
+  const loadQueries = async () => {
+    try {
+      const response = await queriesAPI.listQueries();
+      setQueries(response.data.queries || []);
+    } catch (err) {
+      setError('Failed to load queries');
+      console.error(err);
+    }
+  };
+
+  const executeQuery = async (queryId) => {
+    setLoading(true);
+    setError(null);
+    setResults(null);
+    
+    try {
+      const queryParams = { ...params };
+      if (queryId === 3 || queryId === 4) {
+        queryParams.zone_id = params.zone_id;
+      }
+      if (queryId === 4 || queryId === 9) {
+        queryParams.hours = params.hours;
+      }
+      if (queryId !== 3 && queryId !== 4 && queryId !== 9) {
+        queryParams.limit = params.limit;
+      }
+      
+      const response = await queriesAPI.executeQuery(queryId, queryParams);
+      setResults(response.data);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to execute query');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const basicQueries = queries.filter(q => q.type === 'basic');
+  const advancedQueries = queries.filter(q => q.type === 'advanced');
+
+  return (
+    <div className="viz-section mongodb-queries">
+      <div className="section-header">
+        <h3><Database size={20} /> MongoDB Queries</h3>
+        <p>Execute and explore the 10 meaningful MongoDB queries</p>
+      </div>
+
+      <div className="queries-layout">
+        <div className="queries-sidebar">
+          <h4>Available Queries</h4>
+          
+          <div className="query-group">
+            <h5>Basic Queries (3)</h5>
+            {basicQueries.map(query => (
+              <div
+                key={query.id}
+                className={`query-item ${selectedQuery?.id === query.id ? 'active' : ''}`}
+                onClick={() => setSelectedQuery(query)}
+              >
+                <div className="query-number">{query.id}</div>
+                <div className="query-info">
+                  <div className="query-name">{query.name}</div>
+                  <div className="query-desc">{query.description}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="query-group">
+            <h5>Advanced Queries (7)</h5>
+            {advancedQueries.map(query => (
+              <div
+                key={query.id}
+                className={`query-item ${selectedQuery?.id === query.id ? 'active' : ''}`}
+                onClick={() => setSelectedQuery(query)}
+              >
+                <div className="query-number">{query.id}</div>
+                <div className="query-info">
+                  <div className="query-name">{query.name}</div>
+                  <div className="query-desc">{query.description}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="queries-main">
+          {selectedQuery ? (
+            <>
+              <div className="query-header">
+                <div>
+                  <h4>Query {selectedQuery.id}: {selectedQuery.name}</h4>
+                  <p>{selectedQuery.description}</p>
+                  <div className="query-meta">
+                    <span>Collection: {selectedQuery.collection}</span>
+                    <span>Type: {selectedQuery.type}</span>
+                  </div>
+                </div>
+                <button
+                  className="execute-btn"
+                  onClick={() => executeQuery(selectedQuery.id)}
+                  disabled={loading}
+                >
+                  {loading ? <Loader size={18} className="spin" /> : <PlayCircle size={18} />}
+                  Execute Query
+                </button>
+              </div>
+
+              {(selectedQuery.id === 3 || selectedQuery.id === 4) && (
+                <div className="query-params">
+                  <label>
+                    Zone ID:
+                    <input
+                      type="text"
+                      value={params.zone_id}
+                      onChange={(e) => setParams({ ...params, zone_id: e.target.value })}
+                      placeholder="Z_001"
+                    />
+                  </label>
+                </div>
+              )}
+              {selectedQuery.id === 4 && (
+                <div className="query-params">
+                  <label>
+                    Hours:
+                    <input
+                      type="number"
+                      value={params.hours}
+                      onChange={(e) => setParams({ ...params, hours: parseInt(e.target.value) || 24 })}
+                      min="1"
+                      max="168"
+                    />
+                  </label>
+                </div>
+              )}
+              {selectedQuery.id !== 3 && selectedQuery.id !== 4 && selectedQuery.id !== 9 && (
+                <div className="query-params">
+                  <label>
+                    Limit:
+                    <input
+                      type="number"
+                      value={params.limit}
+                      onChange={(e) => setParams({ ...params, limit: parseInt(e.target.value) || 10 })}
+                      min="1"
+                      max="100"
+                    />
+                  </label>
+                </div>
+              )}
+
+              {error && (
+                <div className="query-error">
+                  <AlertTriangle size={18} />
+                  {error}
+                </div>
+              )}
+
+              {results && (
+                <div className="query-results">
+                  <div className="results-header">
+                    <h5>Results</h5>
+                    <span className="results-count">{results.count || 0} records</span>
+                  </div>
+                  <div className="results-content">
+                    <pre>{JSON.stringify(results.results || results, null, 2)}</pre>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="no-query-selected">
+              <Database size={48} />
+              <p>Select a query from the list to execute it</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <style>{`
+        .mongodb-queries {
+          padding: 2rem;
+        }
+        .queries-layout {
+          display: grid;
+          grid-template-columns: 350px 1fr;
+          gap: 2rem;
+          margin-top: 2rem;
+        }
+        .queries-sidebar {
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          padding: 1.5rem;
+          max-height: 80vh;
+          overflow-y: auto;
+        }
+        .queries-sidebar h4 {
+          margin-bottom: 1rem;
+          color: var(--accent-primary);
+        }
+        .query-group {
+          margin-bottom: 2rem;
+        }
+        .query-group h5 {
+          font-size: 0.875rem;
+          color: var(--text-secondary);
+          margin-bottom: 0.75rem;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+        .query-item {
+          display: flex;
+          gap: 1rem;
+          padding: 1rem;
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          margin-bottom: 0.5rem;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .query-item:hover {
+          border-color: var(--accent-primary);
+          background: rgba(0, 255, 136, 0.05);
+        }
+        .query-item.active {
+          border-color: var(--accent-primary);
+          background: rgba(0, 255, 136, 0.1);
+        }
+        .query-number {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          background: var(--accent-primary);
+          color: #000;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-weight: bold;
+          flex-shrink: 0;
+        }
+        .query-info {
+          flex: 1;
+        }
+        .query-name {
+          font-weight: 600;
+          margin-bottom: 0.25rem;
+        }
+        .query-desc {
+          font-size: 0.875rem;
+          color: var(--text-secondary);
+        }
+        .queries-main {
+          background: var(--bg-card);
+          border: 1px solid var(--border-color);
+          border-radius: 12px;
+          padding: 2rem;
+        }
+        .query-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          margin-bottom: 1.5rem;
+          padding-bottom: 1.5rem;
+          border-bottom: 1px solid var(--border-color);
+        }
+        .query-header h4 {
+          margin-bottom: 0.5rem;
+        }
+        .query-header p {
+          color: var(--text-secondary);
+          margin-bottom: 0.5rem;
+        }
+        .query-meta {
+          display: flex;
+          gap: 1rem;
+          font-size: 0.875rem;
+          color: var(--text-secondary);
+        }
+        .execute-btn {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.75rem 1.5rem;
+          background: var(--accent-primary);
+          color: #000;
+          border: none;
+          border-radius: 8px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .execute-btn:hover:not(:disabled) {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(0, 255, 136, 0.3);
+        }
+        .execute-btn:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+        .query-params {
+          margin-bottom: 1rem;
+        }
+        .query-params label {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          font-size: 0.875rem;
+        }
+        .query-params input {
+          padding: 0.5rem;
+          border: 1px solid var(--border-color);
+          border-radius: 6px;
+          background: var(--bg-secondary);
+          color: var(--text-primary);
+          width: 150px;
+        }
+        .query-error {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 1rem;
+          background: rgba(255, 68, 68, 0.1);
+          border: 1px solid var(--accent-danger);
+          border-radius: 8px;
+          color: var(--accent-danger);
+          margin-bottom: 1rem;
+        }
+        .query-results {
+          margin-top: 1.5rem;
+        }
+        .results-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 1rem;
+        }
+        .results-count {
+          font-size: 0.875rem;
+          color: var(--text-secondary);
+        }
+        .results-content {
+          background: var(--bg-secondary);
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          padding: 1rem;
+          max-height: 500px;
+          overflow: auto;
+        }
+        .results-content pre {
+          margin: 0;
+          font-size: 0.875rem;
+          color: var(--text-primary);
+          white-space: pre-wrap;
+          word-wrap: break-word;
+        }
+        .no-query-selected {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          height: 400px;
+          color: var(--text-secondary);
+        }
+        .no-query-selected p {
+          margin-top: 1rem;
+        }
+        .spin {
+          animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @media (max-width: 1200px) {
+          .queries-layout {
+            grid-template-columns: 1fr;
+          }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 // ==================== MAIN COMPONENT ====================
 export default function AdvancedViz() {
   const [activeTab, setActiveTab] = useState('recovery');
@@ -694,6 +1191,7 @@ export default function AdvancedViz() {
     { id: 'heatmap', label: 'Heatmap', icon: Map },
     { id: 'comparison', label: 'Zone Compare', icon: GitCompare },
     { id: 'network', label: 'Network Flow', icon: Network },
+    { id: 'queries', label: 'MongoDB Queries', icon: Database },
   ];
 
   return (
@@ -725,6 +1223,7 @@ export default function AdvancedViz() {
         {activeTab === 'heatmap' && <HeatmapOverlay />}
         {activeTab === 'comparison' && <ZoneComparison />}
         {activeTab === 'network' && <NetworkFlow />}
+        {activeTab === 'queries' && <MongoDBQueries />}
       </div>
 
       <style>{`
