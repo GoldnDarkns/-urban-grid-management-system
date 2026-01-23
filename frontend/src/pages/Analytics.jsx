@@ -10,12 +10,15 @@ import {
   Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell,
   AreaChart, Area
 } from 'recharts';
-import { analyticsAPI } from '../services/api';
+import { analyticsAPI, cityAPI, dataAPI } from '../services/api';
+import { useAppMode } from '../utils/useAppMode';
 import MetricTooltip, { METRIC_EXPLANATIONS } from '../components/MetricTooltip';
 
 export default function Analytics() {
+  const { mode } = useAppMode();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('realtime');
+  const [currentCityId, setCurrentCityId] = useState(null);
   
   // Real MongoDB data state
   const [hourlyDemand, setHourlyDemand] = useState([]);
@@ -32,74 +35,236 @@ export default function Analytics() {
     peakDemand: 0
   });
 
+  // Get current city ID when in City mode
+  useEffect(() => {
+    if (mode === 'city') {
+      cityAPI.getCurrentCity()
+        .then((r) => setCurrentCityId(r.data?.city_id || null))
+        .catch(() => setCurrentCityId(null));
+    } else {
+      setCurrentCityId(null);
+    }
+  }, [mode]);
+
+  // Listen for city changes
+  useEffect(() => {
+    if (mode !== 'city') return;
+    const onCityChanged = () => {
+      cityAPI.getCurrentCity()
+        .then((r) => setCurrentCityId(r.data?.city_id || null))
+        .catch(() => setCurrentCityId(null));
+    };
+    window.addEventListener('ugms-city-changed', onCityChanged);
+    window.addEventListener('ugms-city-processed', onCityChanged);
+    return () => {
+      window.removeEventListener('ugms-city-changed', onCityChanged);
+      window.removeEventListener('ugms-city-processed', onCityChanged);
+    };
+  }, [mode]);
+
   // Fetch real data from MongoDB
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        // Fetch hourly demand (last 72 hours)
-        const hourlyRes = await analyticsAPI.getHourlyDemand(null, 72);
-        if (hourlyRes.data?.data) {
-          const formatted = hourlyRes.data.data.map(d => ({
-            timestamp: d.timestamp,
-            time: new Date(d.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-            total_demand: d.total_kwh
-          }));
-          setHourlyDemand(formatted);
-          // Calculate live metrics
-          const total = formatted.reduce((sum, d) => sum + d.total_demand, 0);
-          const peak = Math.max(...formatted.map(d => d.total_demand));
-          setLiveMetrics(prev => ({ ...prev, totalDemand: Math.round(total), peakDemand: Math.round(peak) }));
-        }
+        if (mode === 'city' && currentCityId) {
+          // CITY LIVE MODE: Use processed_zone_data
+          // First, get zone coordinates to get real zone names
+          const [processedRes, zoneCoordsRes] = await Promise.all([
+            cityAPI.getProcessedData(currentCityId, null, 100),
+            cityAPI.getZoneCoordinates(currentCityId).catch(() => ({ data: { zones: [] } }))
+          ]);
+          
+          const zones = processedRes.data?.zones || [];
+          const zoneCoords = zoneCoordsRes.data?.zones || [];
+          
+          // Create a map of zone_id to real neighborhood name from reverse geocoding
+          const zoneNameMap = new Map();
+          zoneCoords.forEach(zone => {
+            if (zone.zone_id && zone.name) {
+              // Use the real neighborhood name from reverse geocoding (e.g., "Brooklyn", "Manhattan", "Staten Island")
+              zoneNameMap.set(zone.zone_id, zone.name);
+            }
+          });
+          
+          if (zones.length > 0) {
+            // Transform processed_zone_data into chart formats
+            
+            // 1. Hourly Demand: Use demand_forecast from ML processed data
+            // Group by timestamp hour and aggregate
+            const demandMap = new Map();
+            zones.forEach(zone => {
+              const forecast = zone.ml_processed?.demand_forecast;
+              if (forecast?.next_hour_kwh) {
+                const ts = new Date(zone.timestamp);
+                const hourKey = `${ts.getFullYear()}-${String(ts.getMonth()+1).padStart(2,'0')}-${String(ts.getDate()).padStart(2,'0')} ${String(ts.getHours()).padStart(2,'0')}:00`;
+                if (!demandMap.has(hourKey)) {
+                  demandMap.set(hourKey, { timestamp: hourKey, total_demand: 0, count: 0 });
+                }
+                const entry = demandMap.get(hourKey);
+                entry.total_demand += forecast.next_hour_kwh;
+                entry.count += 1;
+              }
+            });
+            const hourlyData = Array.from(demandMap.values())
+              .map(d => ({
+                timestamp: d.timestamp,
+                time: new Date(d.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+                total_demand: Math.round(d.total_demand)
+              }))
+              .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))
+              .slice(-72); // Last 72 hours
+            setHourlyDemand(hourlyData);
+            
+            // Calculate live metrics from current zone forecasts (not just hourly history)
+            const currentTotal = zones.reduce((sum, zone) => {
+              const forecast = zone.ml_processed?.demand_forecast?.next_hour_kwh || 0;
+              return sum + forecast;
+            }, 0);
+            const peak = hourlyData.length > 0 ? Math.max(...hourlyData.map(d => d.total_demand), currentTotal) : currentTotal;
+            // Use current total if hourly data is empty or use sum of hourly for trend
+            const total = hourlyData.length > 0 ? hourlyData.reduce((sum, d) => sum + d.total_demand, 0) : currentTotal;
+            setLiveMetrics(prev => ({ 
+              ...prev, 
+              totalDemand: Math.round(currentTotal || total), 
+              peakDemand: Math.round(peak) 
+            }));
 
-        // Fetch demand by zone
-        const zoneDemandRes = await analyticsAPI.getDemandByZone();
-        if (zoneDemandRes.data?.data) {
-          setDemandByZone(zoneDemandRes.data.data.map(d => ({
-            zone_id: d.zone_id,
-            zone_name: d.zone_name,
-            total_demand: d.total_kwh,
-            avg_demand: d.avg_kwh
-          })));
-        }
+            // 2. Demand by Zone - Use real zone names
+            const zoneDemand = zones.map(zone => {
+              const forecast = zone.ml_processed?.demand_forecast;
+              const zoneName = zoneNameMap.get(zone.zone_id) || zone.zone_id?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || zone.zone_id;
+              return {
+                zone_id: zone.zone_id,
+                zone_name: zoneName,
+                total_demand: forecast?.next_hour_kwh || 0,
+                avg_demand: forecast?.next_hour_kwh || 0
+              };
+            }).filter(z => z.total_demand > 0);
+            setDemandByZone(zoneDemand);
 
-        // Fetch AQI by zone
-        const aqiRes = await analyticsAPI.getAQIByZone();
-        if (aqiRes.data?.data) {
-          setAqiByZone(aqiRes.data.data.map(d => ({
-            zone_id: d.zone_id,
-            zone_name: d.zone_name,
-            avg_aqi: d.avg_aqi
-          })));
-          // Calculate average AQI
-          const avgAqi = aqiRes.data.data.reduce((sum, d) => sum + (d.avg_aqi || 0), 0) / aqiRes.data.data.length;
-          setLiveMetrics(prev => ({ ...prev, avgAqi: Math.round(avgAqi) }));
-        }
+            // 3. AQI by Zone - Use real zone names
+            const zoneAqi = zones.map(zone => {
+              const aqi = zone.raw_data?.aqi?.aqi || zone.ml_processed?.aqi_prediction?.next_hour_aqi || 0;
+              const zoneName = zoneNameMap.get(zone.zone_id) || zone.zone_id?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || zone.zone_id;
+              return {
+                zone_id: zone.zone_id,
+                zone_name: zoneName,
+                avg_aqi: Math.round(aqi)
+              };
+            }).filter(z => z.avg_aqi > 0);
+            setAqiByZone(zoneAqi);
+            
+            // Calculate average AQI
+            if (zoneAqi.length > 0) {
+              const avgAqi = zoneAqi.reduce((sum, d) => sum + d.avg_aqi, 0) / zoneAqi.length;
+              setLiveMetrics(prev => ({ ...prev, avgAqi: Math.round(avgAqi) }));
+            }
 
-        // Fetch alerts summary
-        const alertsRes = await analyticsAPI.getAlertsSummary();
-        if (alertsRes.data) {
-          setAlertsSummary(alertsRes.data);
-          setLiveMetrics(prev => ({ ...prev, activeAlerts: alertsRes.data.total || 0 }));
-        }
+            // 4. Alerts Summary (from recommendations or generate from risk scores)
+            const alerts = { total: 0, by_level: {} };
+            zones.forEach(zone => {
+              const risk = zone.ml_processed?.risk_score;
+              if (risk?.level === 'high') {
+                alerts.total += 1;
+                alerts.by_level['emergency'] = (alerts.by_level['emergency'] || 0) + 1;
+              } else if (risk?.level === 'medium') {
+                alerts.total += 1;
+                alerts.by_level['alert'] = (alerts.by_level['alert'] || 0) + 1;
+              }
+            });
+            setAlertsSummary(alerts);
+            setLiveMetrics(prev => ({ ...prev, activeAlerts: alerts.total }));
 
-        // Fetch correlation matrix
-        const corrRes = await analyticsAPI.getCorrelation();
-        if (corrRes.data?.variables) {
-          setCorrelationData(corrRes.data);
-        }
+            // 5. Correlation Matrix (calculate from processed data)
+            // Use temperature, AQI, demand forecast, risk score
+            const variables = ['Temperature', 'AQI', 'Demand', 'Risk Score'];
+            const matrix = [];
+            const temps = zones.map(z => z.raw_data?.weather?.temp || z.raw_data?.weather?.temperature || 20);
+            const aqis = zones.map(z => z.raw_data?.aqi?.aqi || 0);
+            const demands = zones.map(z => z.ml_processed?.demand_forecast?.next_hour_kwh || 0);
+            const risks = zones.map(z => z.ml_processed?.risk_score?.score || 0);
+            
+            const dataArrays = [temps, aqis, demands, risks];
+            variables.forEach((v1, i) => {
+              variables.forEach((v2, j) => {
+                const corr = calculateCorrelation(dataArrays[i], dataArrays[j]);
+                matrix.push({ x: v1, y: v2, value: corr });
+              });
+            });
+            setCorrelationData({ variables, matrix, data_points: zones.length });
 
-        // Fetch anomalies
-        const anomaliesRes = await analyticsAPI.getAnomalies(2.0, 50);
-        if (anomaliesRes.data?.anomalies) {
-          // Format for timeline chart
-          const formatted = anomaliesRes.data.anomalies.map((a, i) => ({
-            time: new Date(a.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-            value: a.kwh,
-            anomaly: a.kwh,
-            threshold: a.baseline_hourly * 2
-          }));
-          setAnomalyData(formatted);
+            // 6. Anomalies from anomaly_detection
+            const anomalies = zones
+              .filter(z => z.ml_processed?.anomaly_detection?.is_anomaly)
+              .map((zone, i) => {
+                const anomaly = zone.ml_processed.anomaly_detection;
+                return {
+                  time: new Date(zone.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+                  value: anomaly.current_demand || 0,
+                  anomaly: anomaly.current_demand || 0,
+                  threshold: anomaly.threshold || 0
+                };
+              });
+            setAnomalyData(anomalies);
+          }
+        } else {
+          // SIM MODE: Use existing analyticsAPI calls
+          const hourlyRes = await analyticsAPI.getHourlyDemand(null, 72);
+          if (hourlyRes.data?.data) {
+            const formatted = hourlyRes.data.data.map(d => ({
+              timestamp: d.timestamp,
+              time: new Date(d.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+              total_demand: d.total_kwh
+            }));
+            setHourlyDemand(formatted);
+            const total = formatted.reduce((sum, d) => sum + d.total_demand, 0);
+            const peak = Math.max(...formatted.map(d => d.total_demand));
+            setLiveMetrics(prev => ({ ...prev, totalDemand: Math.round(total), peakDemand: Math.round(peak) }));
+          }
+
+          const zoneDemandRes = await analyticsAPI.getDemandByZone();
+          if (zoneDemandRes.data?.data) {
+            setDemandByZone(zoneDemandRes.data.data.map(d => ({
+              zone_id: d.zone_id,
+              zone_name: d.zone_name,
+              total_demand: d.total_kwh,
+              avg_demand: d.avg_kwh
+            })));
+          }
+
+          const aqiRes = await analyticsAPI.getAQIByZone();
+          if (aqiRes.data?.data) {
+            setAqiByZone(aqiRes.data.data.map(d => ({
+              zone_id: d.zone_id,
+              zone_name: d.zone_name,
+              avg_aqi: d.avg_aqi
+            })));
+            const avgAqi = aqiRes.data.data.reduce((sum, d) => sum + (d.avg_aqi || 0), 0) / aqiRes.data.data.length;
+            setLiveMetrics(prev => ({ ...prev, avgAqi: Math.round(avgAqi) }));
+          }
+
+          const alertsRes = await analyticsAPI.getAlertsSummary();
+          if (alertsRes.data) {
+            setAlertsSummary(alertsRes.data);
+            setLiveMetrics(prev => ({ ...prev, activeAlerts: alertsRes.data.total || 0 }));
+          }
+
+          const corrRes = await analyticsAPI.getCorrelation();
+          if (corrRes.data?.variables) {
+            setCorrelationData(corrRes.data);
+          }
+
+          const anomaliesRes = await analyticsAPI.getAnomalies(2.0, 50);
+          if (anomaliesRes.data?.anomalies) {
+            const formatted = anomaliesRes.data.anomalies.map((a, i) => ({
+              time: new Date(a.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+              value: a.kwh,
+              anomaly: a.kwh,
+              threshold: a.baseline_hourly * 2
+            }));
+            setAnomalyData(formatted);
+          }
         }
       } catch (error) {
         console.error('Error fetching analytics data:', error);
@@ -109,10 +274,27 @@ export default function Analytics() {
     };
 
     fetchData();
-    // Refresh every 5 minutes
-    const interval = setInterval(fetchData, 300000);
+    // Refresh every 30 seconds in City mode, 5 minutes in Sim mode
+    const interval = setInterval(fetchData, mode === 'city' ? 30000 : 300000);
     return () => clearInterval(interval);
-  }, []);
+  }, [mode, currentCityId]);
+
+  // Helper function to calculate correlation
+  const calculateCorrelation = (arr1, arr2) => {
+    if (arr1.length !== arr2.length || arr1.length === 0) return 0;
+    const mean1 = arr1.reduce((a, b) => a + b, 0) / arr1.length;
+    const mean2 = arr2.reduce((a, b) => a + b, 0) / arr2.length;
+    let numerator = 0, denom1 = 0, denom2 = 0;
+    for (let i = 0; i < arr1.length; i++) {
+      const diff1 = arr1[i] - mean1;
+      const diff2 = arr2[i] - mean2;
+      numerator += diff1 * diff2;
+      denom1 += diff1 * diff1;
+      denom2 += diff2 * diff2;
+    }
+    const denominator = Math.sqrt(denom1 * denom2);
+    return denominator === 0 ? 0 : numerator / denominator;
+  };
 
   const COLORS = ['#00ff88', '#00d4ff', '#ffaa00', '#ff4466', '#aa66ff'];
   const alertPieData = Object.entries(alertsSummary.by_level || {}).map(([name, value]) => ({ name, value }));
@@ -137,7 +319,11 @@ export default function Analytics() {
       <motion.div className="page-header" initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
         <div className="header-content">
           <h1><BarChart3 size={32} /> Analytics Dashboard</h1>
-          <p>Real-time analytics, correlations, and anomaly detection</p>
+          <p>
+            {mode === 'city' 
+              ? `Real-time analytics for ${currentCityId ? currentCityId.toUpperCase() : 'selected city'} - Live processed data`
+              : 'Analytics from simulated dataset - Historical data'}
+          </p>
         </div>
         <button className="btn btn-secondary" onClick={() => window.location.reload()}>
           <RefreshCw size={18} /> Refresh

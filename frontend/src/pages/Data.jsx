@@ -6,26 +6,51 @@ import {
 } from 'lucide-react';
 import { dataAPI } from '../services/api';
 import StatCard from '../components/StatCard';
+import { useAppMode } from '../utils/useAppMode';
+import { cityAPI } from '../services/api';
 
 export default function Data() {
+  const { mode } = useAppMode();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   const [dbStatus, setDbStatus] = useState(null);
   const [zones, setZones] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [gridEdges, setGridEdges] = useState(null);
+  const [currentCityId, setCurrentCityId] = useState(null);
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [mode, currentCityId]);
+
+  useEffect(() => {
+    if (mode === 'city') {
+      cityAPI.getCurrentCity().then((r) => setCurrentCityId(r.data?.city_id || null)).catch(() => setCurrentCityId(null));
+    } else {
+      setCurrentCityId(null);
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== 'city') return;
+    const onCityChanged = () => {
+      cityAPI.getCurrentCity().then((r) => setCurrentCityId(r.data?.city_id || null)).catch(() => setCurrentCityId(null));
+    };
+    window.addEventListener('ugms-city-changed', onCityChanged);
+    window.addEventListener('ugms-city-processed', onCityChanged);
+    return () => {
+      window.removeEventListener('ugms-city-changed', onCityChanged);
+      window.removeEventListener('ugms-city-processed', onCityChanged);
+    };
+  }, [mode]);
 
   const fetchData = async () => {
     setLoading(true);
     try {
       const [status, zonesData, alertsData, edges] = await Promise.all([
-        dataAPI.getStatus(),
-        dataAPI.getZones(),
-        dataAPI.getAlerts(20),
+        dataAPI.getStatus(mode === 'city' ? currentCityId : null),
+        dataAPI.getZones(mode === 'city' ? currentCityId : null),
+        dataAPI.getAlerts(20, null, mode === 'city' ? currentCityId : null),
         dataAPI.getGridEdges()
       ]);
       setDbStatus(status.data);
@@ -43,7 +68,7 @@ export default function Data() {
     { id: 'overview', label: 'Overview', icon: Database },
     { id: 'zones', label: 'Zones', icon: MapPin },
     { id: 'alerts', label: 'Alerts', icon: AlertTriangle },
-    { id: 'graph', label: 'Grid Graph', icon: GitBranch },
+    ...(mode === 'sim' ? [{ id: 'graph', label: 'Grid Graph', icon: GitBranch }] : []),
   ];
 
   const collections = dbStatus?.collections || {};
@@ -57,9 +82,13 @@ export default function Data() {
       >
         <h1>
           <Database size={32} />
-          MongoDB Data Explorer
+          {mode === 'city' ? 'City Data Explorer' : 'MongoDB Data Explorer'}
         </h1>
-        <p>Explore the urban grid database collections and data</p>
+        <p>
+          {mode === 'city' 
+            ? `Explore live processed data for ${currentCityId ? currentCityId.toUpperCase() : 'selected city'} - Real-time API data and ML outputs`
+            : 'Explore the urban grid database collections and simulated data'}
+        </p>
         <button className="btn btn-secondary" onClick={fetchData}>
           <RefreshCw size={18} />
           Refresh
@@ -86,7 +115,7 @@ export default function Data() {
         </div>
       ) : (
         <div className="tab-content">
-          {/* Overview Tab */}
+      {/* Overview Tab */}
           {activeTab === 'overview' && (
             <motion.div
               initial={{ opacity: 0 }}
@@ -94,65 +123,88 @@ export default function Data() {
               transition={{ duration: 0.3 }}
             >
               <div className="stats-grid">
-                <StatCard
-                  value={collections.zones?.count || 0}
-                  label="Zones"
-                  icon={MapPin}
-                  color="secondary"
-                  delay={0.1}
-                />
-                <StatCard
-                  value={collections.households?.count || 0}
-                  label="Households"
-                  icon={Home}
-                  color="primary"
-                  delay={0.2}
-                />
-                <StatCard
-                  value={collections.policies?.count || 0}
-                  label="Policies"
-                  icon={FileText}
-                  color="purple"
-                  delay={0.3}
-                />
-                <StatCard
-                  value={collections.grid_edges?.count || 0}
-                  label="Grid Edges"
-                  icon={GitBranch}
-                  color="secondary"
-                  delay={0.4}
-                />
+                {mode === 'city' ? (
+                  <>
+                    <StatCard
+                      value={collections.processed_zone_data?.count || 0}
+                      label="Zones"
+                      icon={MapPin}
+                      color="primary"
+                      delay={0.1}
+                      tooltip="20 zones per city with processed data"
+                    />
+                    <StatCard
+                      value={collections.weather_data?.count || 0}
+                      label="Weather Records"
+                      icon={Activity}
+                      color="secondary"
+                      delay={0.2}
+                    />
+                    <StatCard
+                      value={collections.aqi_data?.count || 0}
+                      label="AQI Records"
+                      icon={AlertTriangle}
+                      color="danger"
+                      delay={0.3}
+                    />
+                    <StatCard
+                      value={collections.traffic_data?.count || 0}
+                      label="Traffic Records"
+                      icon={Activity}
+                      color="primary"
+                      delay={0.4}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <StatCard
+                      value={collections.zones?.count || 0}
+                      label="Zones"
+                      icon={MapPin}
+                      color="secondary"
+                      delay={0.1}
+                    />
+                    <StatCard
+                      value={collections.households?.count || 0}
+                      label="Households"
+                      icon={Home}
+                      color="primary"
+                      delay={0.2}
+                    />
+                    <StatCard
+                      value={collections.policies?.count || 0}
+                      label="Policies"
+                      icon={FileText}
+                      color="purple"
+                      delay={0.3}
+                    />
+                    <StatCard
+                      value={collections.grid_edges?.count || 0}
+                      label="Grid Edges"
+                      icon={GitBranch}
+                      color="secondary"
+                      delay={0.4}
+                    />
+                  </>
+                )}
               </div>
 
               <div className="stats-grid" style={{ marginTop: '1.5rem' }}>
-                <StatCard
-                  value={collections.meter_readings?.count || 0}
-                  label="Meter Readings"
-                  icon={Activity}
-                  color="primary"
-                  delay={0.5}
-                />
-                <StatCard
-                  value={collections.air_climate_readings?.count || 0}
-                  label="Climate Readings"
-                  icon={Server}
-                  color="secondary"
-                  delay={0.6}
-                />
-                <StatCard
-                  value={collections.alerts?.count || 0}
-                  label="Alerts"
-                  icon={AlertTriangle}
-                  color="danger"
-                  delay={0.7}
-                />
-                <StatCard
-                  value={collections.constraint_events?.count || 0}
-                  label="Constraint Events"
-                  icon={FileText}
-                  color="warning"
-                  delay={0.8}
-                />
+                {dbStatus?.mode === 'city' ? (
+                  <>
+                    <StatCard value={collections.weather_data?.count || 0} label="Weather" icon={Server} color="secondary" delay={0.5} />
+                    <StatCard value={collections.aqi_data?.count || 0} label="AQI" icon={AlertTriangle} color="danger" delay={0.6} />
+                    <StatCard value={collections.traffic_data?.count || 0} label="Traffic" icon={Activity} color="primary" delay={0.7} />
+                    <StatCard value={collections.eia_electricity_data?.count || 0} label="EIA" icon={FileText} color="warning" delay={0.8} />
+                  </>
+                ) : (
+                  <>
+                    <StatCard value={collections.meter_readings?.count || 0} label="Meter Readings" icon={Activity} color="primary" delay={0.5} />
+                    <StatCard value={collections.air_climate_readings?.count || 0} label="Climate Readings" icon={Server} color="secondary" delay={0.6} />
+                    <StatCard value={collections.alerts?.count || 0} label="Alerts" icon={AlertTriangle} color="danger" delay={0.7} />
+                    <StatCard value={collections.constraint_events?.count || 0} label="Constraint Events" icon={FileText} color="warning" delay={0.8} />
+                  </>
+                )}
               </div>
 
               <div className="collections-detail">

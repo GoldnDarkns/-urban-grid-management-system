@@ -12,17 +12,27 @@ const api = axios.create({
   },
 });
 
+// Attach mode header to every request so backend can switch DBs.
+api.interceptors.request.use((config) => {
+  try {
+    const mode = (localStorage.getItem('ugms_mode') || 'city').toLowerCase();
+    config.headers = config.headers || {};
+    config.headers['X-Data-Mode'] = mode === 'sim' ? 'sim' : 'city';
+  } catch (_) {}
+  return config;
+});
+
 // Data endpoints
 export const dataAPI = {
-  getStatus: () => api.get('/data/status'),
-  getZones: () => api.get('/data/zones'),
+  getStatus: (cityId = null) => api.get('/data/status', { params: cityId ? { city_id: cityId } : {} }),
+  getZones: (cityId = null) => api.get('/data/zones', { params: cityId ? { city_id: cityId } : {} }),
   getZone: (zoneId) => api.get(`/data/zones/${zoneId}`),
   getHouseholds: (limit = 50, zoneId = null) => 
     api.get('/data/households', { params: { limit, zone_id: zoneId } }),
   getPolicies: () => api.get('/data/policies'),
   getGridEdges: () => api.get('/data/grid-edges'),
-  getAlerts: (limit = 50, level = null) => 
-    api.get('/data/alerts', { params: { limit, level } }),
+  getAlerts: (limit = 50, level = null, cityId = null) => 
+    api.get('/data/alerts', { params: { limit, level, ...(cityId ? { city_id: cityId } : {}) } }),
   getConstraintEvents: () => api.get('/data/constraint-events'),
   getMeterReadingsSample: (limit = 100) => 
     api.get('/data/meter-readings/sample', { params: { limit } }),
@@ -81,12 +91,42 @@ export const queriesAPI = {
   listQueries: () => api.get('/queries/list'),
   executeQuery: (queryId, params = {}) => 
     api.get(`/queries/execute/${queryId}`, { params }),
+  createQuery: (queryData) => api.post('/queries/create', queryData),
+  updateQuery: (queryId, queryData) => api.put(`/queries/update/${queryId}`, queryData),
+  deleteQuery: (queryId) => api.delete(`/queries/delete/${queryId}`),
 };
 
 // AI Recommendations endpoints
 export const aiAPI = {
-  getRecommendations: () => api.get('/ai/recommendations'),
+  getRecommendations: (cityId = null) => api.get('/ai/recommendations', { params: cityId ? { city_id: cityId } : {} }),
   getSystemState: () => api.get('/ai/system-state'),
+};
+
+// City Selection endpoints
+export const cityAPI = {
+  listCities: () => api.get('/city/list'),
+  getCurrentCity: () => api.get('/city/current'),
+  selectCity: (cityId) => api.post(`/city/select/${cityId}`),
+  processAllZones: (cityId = null) => 
+    api.post('/city/process/all', null, { params: cityId ? { city_id: cityId } : {} }),
+  processZone: (zoneId, lat, lon, cityId = null) =>
+    api.post(`/city/process/zone/${zoneId}`, null, { 
+      params: { lat, lon, ...(cityId ? { city_id: cityId } : {}) }
+    }),
+  processEIA: (cityId = null) =>
+    api.post('/city/process/eia', null, { params: cityId ? { city_id: cityId } : {} }),
+  getZoneCoordinates: (cityId = null) =>
+    api.get('/city/zones/coordinates', { params: cityId ? { city_id: cityId } : {} }),
+  getProcessedData: (cityId = null, zoneId = null, limit = 20) =>
+    api.get('/city/processed-data', { 
+      params: { 
+        ...(cityId ? { city_id: cityId } : {}),
+        ...(zoneId ? { zone_id: zoneId } : {}),
+        limit
+      }
+    }),
+  getProcessingSummary: (cityId = null) =>
+    api.get('/city/processing-summary', { params: cityId ? { city_id: cityId } : {} }),
 };
 
 // Health check (note: this endpoint is at /api/health, not under /api base)

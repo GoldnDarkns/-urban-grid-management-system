@@ -7,20 +7,22 @@ import {
   Server, Layers, Code, BarChart, LineChart, ClipboardList, Box
 } from 'lucide-react';
 import { dataAPI, analyticsAPI, modelsAPI } from '../services/api';
+import { useAppMode } from '../utils/useAppMode';
 import StatCard from '../components/StatCard';
 
 export default function Guide() {
+  const { mode } = useAppMode();
   const [loading, setLoading] = useState(true);
   const [dbStats, setDbStats] = useState(null);
   const [activeSection, setActiveSection] = useState('overview');
 
   useEffect(() => {
     fetchStats();
-  }, []);
+  }, [mode]);
 
   const fetchStats = async () => {
     try {
-      const status = await dataAPI.getStatus();
+      const status = await dataAPI.getStatus(mode === 'city' ? null : null);
       setDbStats(status.data);
     } catch (error) {
       console.error('Error fetching stats:', error);
@@ -43,10 +45,10 @@ export default function Guide() {
       path: '/',
       icon: Target,
       order: 1,
-      description: 'System overview and dashboard with real-time statistics',
+      description: mode === 'city' ? 'System overview with live city data and processing status' : 'System overview and dashboard with real-time statistics',
       purpose: 'Quick view of system health, data counts, and key metrics',
-      dataSource: 'MongoDB collections (zones, households, readings, alerts)',
-      output: 'Live statistics: zones count, households count, readings count, alerts count',
+      dataSource: mode === 'city' ? 'processed_zone_data, weather_data, aqi_data, traffic_data (from CITY DB)' : 'MongoDB collections (zones, households, readings, alerts from SIM DB)',
+      output: mode === 'city' ? 'Live statistics: processed zones, weather/AQI/traffic records, processing summary' : 'Live statistics: zones count, households count, readings count, alerts count',
       features: ['System status indicators', 'Quick stats cards', 'System architecture diagram', 'Feature overview']
     },
     {
@@ -67,11 +69,11 @@ export default function Guide() {
       path: '/data',
       icon: Database,
       order: 3,
-      description: 'MongoDB data explorer - view all collections, zones, alerts, and grid structure',
-      purpose: 'Inspect raw data stored in MongoDB Atlas',
-      dataSource: 'Direct MongoDB queries (zones, households, alerts, grid_edges collections)',
-      output: 'Collection counts, zone details, alert history, grid connectivity graph',
-      features: ['Collection overview with counts', 'Zone details table', 'Alerts timeline', 'Grid adjacency visualization']
+      description: mode === 'city' ? 'City Data Explorer - view live processed data, weather, AQI, traffic records' : 'MongoDB data explorer - view all collections, zones, alerts, and grid structure',
+      purpose: mode === 'city' ? 'Inspect live processed data from selected city stored in local MongoDB' : 'Inspect raw data stored in MongoDB Atlas',
+      dataSource: mode === 'city' ? 'processed_zone_data, weather_data, aqi_data, traffic_data (from CITY DB)' : 'Direct MongoDB queries (zones, households, alerts, grid_edges collections from SIM DB)',
+      output: mode === 'city' ? '20 zones processed, weather/AQI/traffic records, collection indexes' : 'Collection counts, zone details, alert history, grid connectivity graph',
+      features: mode === 'city' ? ['Processed zone data (20 zones)', 'Weather/AQI/Traffic records', 'Collection indexes', 'City-specific data'] : ['Collection overview with counts', 'Zone details table', 'Alerts timeline', 'Grid adjacency visualization']
     },
     {
       id: 'analytics',
@@ -79,11 +81,11 @@ export default function Guide() {
       path: '/analytics',
       icon: BarChart3,
       order: 4,
-      description: 'Real-time analytics, correlations, and anomaly detection from MongoDB data',
+      description: mode === 'city' ? 'Real-time analytics from live processed city data - demand forecasts, AQI, correlations, anomalies' : 'Real-time analytics, correlations, and anomaly detection from MongoDB data',
       purpose: 'Analyze energy demand patterns, AQI trends, and detect consumption anomalies',
-      dataSource: 'Aggregated MongoDB queries (hourly demand, AQI by zone, correlation matrix)',
+      dataSource: mode === 'city' ? 'processed_zone_data (demand forecasts, AQI, anomalies from ML models)' : 'Aggregated MongoDB queries (hourly demand, AQI by zone, correlation matrix)',
       output: 'Charts showing demand trends, AQI distribution, correlation analysis, anomaly timeline',
-      features: ['Real-time demand charts (72 hours)', 'Demand by zone comparison', 'AQI by zone', 'Correlation matrix', 'Anomaly detection timeline']
+      features: ['Real-time demand charts', 'Demand by zone comparison', 'AQI by zone', 'Correlation matrix', 'Anomaly detection timeline']
     },
     {
       id: 'advanced-analytics',
@@ -91,11 +93,11 @@ export default function Guide() {
       path: '/advanced-analytics',
       icon: Brain,
       order: 5,
-      description: 'Deep dive into ML models, MongoDB queries, and technical details',
-      purpose: 'Explore all 5 ML models (LSTM, Autoencoder, GNN, ARIMA, Prophet) and execute 10 MongoDB queries',
-      dataSource: 'ML model outputs, MongoDB query results',
-      output: 'Model architectures, training metrics, query results, model comparisons',
-      features: ['ML Model Details', 'MongoDB Queries (10 queries)', 'Model Comparison', 'Technical Deep-dive']
+      description: mode === 'city' ? 'Live ML outputs from real-time processing - LSTM forecasts, Autoencoder anomalies, GNN risk scores' : 'Deep dive into ML models, MongoDB queries, and technical details',
+      purpose: mode === 'city' ? 'View live ML model outputs processing real city data' : 'Explore all 5 ML models (LSTM, Autoencoder, GNN, ARIMA, Prophet) and execute 10 MongoDB queries',
+      dataSource: mode === 'city' ? 'processed_zone_data.ml_processed (live outputs per zone)' : 'ML model outputs, MongoDB query results',
+      output: mode === 'city' ? 'Live ML outputs, aggregated stats, real-time processing status' : 'Model architectures, training metrics, query results, model comparisons',
+      features: mode === 'city' ? ['Live ML Outputs', 'Per-Zone Stats', 'Real-time Processing', 'City-Specific Results'] : ['ML Model Details', 'MongoDB Queries (10 queries)', 'Model Comparison', 'Technical Deep-dive']
     },
     {
       id: 'ai-recommendations',
@@ -105,7 +107,7 @@ export default function Guide() {
       order: 6,
       description: 'AI-powered actionable recommendations synthesized from all ML models',
       purpose: 'Get prioritized, intelligent recommendations based on all system data and ML predictions',
-      dataSource: 'All ML model outputs, zone risk, alerts, anomalies, AQI status (compiled and analyzed by Gemini AI)',
+      dataSource: 'All ML model outputs, zone risk, alerts, anomalies, live API data (compiled and analyzed by OpenRouter LLM)',
       output: 'Prioritized recommendations with actions, cost-benefit analysis, confidence scores, simulation suggestions',
       features: ['AI Synthesis', 'Prioritized Actions', 'Cost-Benefit Analysis', 'Simulation Suggestions', 'Confidence Scores']
     },
@@ -139,11 +141,11 @@ export default function Guide() {
       path: '/citymap',
       icon: Map,
       order: 9,
-      description: 'Interactive 2D city map showing zones with real-time risk visualization',
+      description: mode === 'city' ? 'Interactive 2D city map with real zone coordinates and live risk scores' : 'Interactive 2D city map showing zones with real-time risk visualization',
       purpose: 'Visualize zone locations, connections, and risk levels on a city map',
-      dataSource: 'Zones, grid edges, zone risk scores from MongoDB',
+      dataSource: mode === 'city' ? 'Zone coordinates from city selection, processed risk scores from processed_zone_data' : 'Zones, grid edges, zone risk scores from MongoDB',
       output: 'Interactive map with zone nodes, connections, risk colors, real-time updates',
-      features: ['Zone visualization', 'Grid connections', 'Risk color coding', 'Zone details on click']
+      features: mode === 'city' ? ['Real city coordinates', 'Proximity-based grid edges', 'Live risk visualization', 'Zone details on click'] : ['Zone visualization', 'Grid connections', 'Risk color coding', 'Zone details on click']
     },
     {
       id: 'simulation3d',
@@ -151,11 +153,12 @@ export default function Guide() {
       path: '/simulation3d',
       icon: Box,
       order: 10,
-      description: '3D visualization of the city with energy flow and risk propagation',
-      purpose: 'Visualize energy distribution and risk in 3D space',
-      dataSource: 'Zones, demand data, risk scores from MongoDB',
+      description: '3D visualization of synthetic city (Simulated mode only)',
+      purpose: 'Visualize energy distribution and risk in 3D space using simulated data',
+      dataSource: 'Synthetic Tron city model (not available in City Live mode)',
       output: '3D city model with buildings, energy particles, risk visualization',
-      features: ['3D city rendering', 'Energy flow visualization', 'Risk propagation', 'Interactive camera']
+      features: ['3D city rendering', 'Energy flow visualization', 'Risk propagation', 'Interactive camera'],
+      note: mode === 'city' ? 'Not available in City Live mode - uses synthetic data' : ''
     },
     {
       id: 'visualizations',
@@ -183,47 +186,90 @@ export default function Guide() {
     }
   ];
 
-  const workflow = [
+  const workflow = mode === 'city' ? [
     {
       step: 1,
-      name: 'Data Collection',
-      description: 'MongoDB Atlas stores time-series data from meters and sensors',
+      name: 'City Selection',
+      description: 'User selects a city from dropdown (navbar → Active City). System configures 20 zones with real coordinates for that city.',
+      data: 'NYC, Chicago, LA, SF, Houston, Phoenix → 20 zones per city',
+      icon: Map
+    },
+    {
+      step: 2,
+      name: 'Live API Fetching',
+      description: 'BackgroundProcessor (every 5 minutes) fetches live data for each zone: Weather, AQI, Traffic, EIA, Census, 311',
+      data: 'OpenWeatherMap, AirVisual, TomTom, EIA, Census, City 311, OpenStreetMap',
+      icon: Server
+    },
+    {
+      step: 3,
+      name: 'ML Processing',
+      description: 'For each zone: LSTM forecasts demand, Autoencoder detects anomalies, GNN scores risk. All use live API data.',
+      data: 'LSTM, Autoencoder, GNN, ARIMA, Prophet → Processed per zone',
+      icon: Brain
+    },
+    {
+      step: 4,
+      name: 'Local Storage',
+      description: 'All processed data (raw API + ML outputs + recommendations) stored in local MongoDB (CITY DB)',
+      data: 'processed_zone_data, weather_data, aqi_data, traffic_data (with city_id)',
+      icon: Database
+    },
+    {
+      step: 5,
+      name: 'FastAPI Serving',
+      description: 'FastAPI reads from local MongoDB and serves processed data to frontend. Mode-aware routing ensures correct database.',
+      data: '/api/city/processed-data, /api/data/* (with X-Data-Mode header)',
+      icon: Server
+    },
+    {
+      step: 6,
+      name: 'AI Recommendations',
+      description: 'OpenRouter LLM analyzes all ML outputs, risk scores, alerts → generates prioritized recommendations',
+      data: 'Prioritized actions, cost-benefit analysis, confidence scores, implementation steps',
+      icon: Brain
+    },
+    {
+      step: 7,
+      name: 'Frontend Display',
+      description: 'React dashboard displays live processed data, charts update every 30 seconds, all pages are mode-aware',
+      data: 'Interactive charts, city map with real coordinates, live ML outputs, AI recommendations',
+      icon: Eye
+    }
+  ] : [
+    {
+      step: 1,
+      name: 'MongoDB Atlas Data',
+      description: 'Historical demo dataset stored in MongoDB Atlas with time-series data',
       data: 'meter_readings, air_climate_readings, zones, households, alerts',
       icon: Database
     },
     {
       step: 2,
-      name: 'Data Processing',
-      description: 'FastAPI backend aggregates and processes data from MongoDB',
+      name: 'Data Aggregation',
+      description: 'FastAPI queries MongoDB Atlas and aggregates data for analysis',
       data: 'Hourly aggregations, zone metrics, correlation calculations',
       icon: Server
     },
     {
       step: 3,
       name: 'ML Model Inference',
-      description: '5 trained models (LSTM, Autoencoder, GNN, ARIMA, Prophet) make predictions',
-      data: 'Demand forecasts, anomaly scores, risk classifications, statistical forecasts',
+      description: '5 models (LSTM, Autoencoder, GNN, ARIMA, Prophet) use historical training data',
+      data: 'Demand forecasts, anomaly scores, risk classifications, 10 MongoDB queries',
       icon: Brain
     },
     {
       step: 4,
-      name: 'Analytics & Advanced Analysis',
-      description: 'Backend calculates analytics, executes MongoDB queries, and processes ML outputs',
-      data: 'Demand trends, AQI analysis, risk scores, anomaly detection, 10 MongoDB queries',
-      icon: BarChart3
-    },
-    {
-      step: 5,
-      name: 'AI Synthesis',
-      description: 'Gemini AI analyzes all ML outputs and system state to generate recommendations',
-      data: 'Prioritized actions, cost-benefit analysis, confidence scores, simulation suggestions',
+      name: 'AI Synthesis (OpenRouter)',
+      description: 'OpenRouter LLM analyzes ML outputs, risk, alerts → recommendations',
+      data: 'Prioritized actions, cost-benefit analysis, confidence scores',
       icon: Brain
     },
     {
-      step: 6,
+      step: 5,
       name: 'Frontend Display',
-      description: 'React frontend displays data, charts, visualizations, and AI recommendations',
-      data: 'Interactive charts, maps, model details, prioritized recommendations',
+      description: 'React shows charts, training metrics, and simulated data visualizations',
+      data: 'Interactive charts, model comparisons, historical data views',
       icon: Eye
     }
   ];
@@ -292,68 +338,104 @@ export default function Guide() {
             </div>
 
             <div className="stats-grid">
-              <StatCard
-                value={collections.zones?.count || 0}
-                label="Zones"
-                icon={Map}
-                color="secondary"
-              />
-              <StatCard
-                value={collections.households?.count || 0}
-                label="Households"
-                icon={Database}
-                color="primary"
-              />
-              <StatCard
-                value={Math.round((collections.meter_readings?.count || 0) / 1000)}
-                label="K Readings"
-                icon={Activity}
-                color="warning"
-                suffix="K"
-              />
-              <StatCard
-                value={collections.alerts?.count || 0}
-                label="Alerts"
-                icon={AlertTriangle}
-                color="danger"
-              />
+              {mode === 'city' ? (
+                <>
+                  <StatCard
+                    value={collections.processed_zone_data?.count || 0}
+                    label="Zones Processed"
+                    icon={Map}
+                    color="primary"
+                  />
+                  <StatCard
+                    value={collections.weather_data?.count || 0}
+                    label="Weather Records"
+                    icon={Database}
+                    color="secondary"
+                  />
+                  <StatCard
+                    value={collections.aqi_data?.count || 0}
+                    label="AQI Records"
+                    icon={Activity}
+                    color="warning"
+                  />
+                  <StatCard
+                    value={collections.traffic_data?.count || 0}
+                    label="Traffic Records"
+                    icon={AlertTriangle}
+                    color="danger"
+                  />
+                </>
+              ) : (
+                <>
+                  <StatCard
+                    value={collections.zones?.count || 0}
+                    label="Zones"
+                    icon={Map}
+                    color="secondary"
+                  />
+                  <StatCard
+                    value={collections.households?.count || 0}
+                    label="Households"
+                    icon={Database}
+                    color="primary"
+                  />
+                  <StatCard
+                    value={Math.round((collections.meter_readings?.count || 0) / 1000)}
+                    label="K Readings"
+                    icon={Activity}
+                    color="warning"
+                    suffix="K"
+                  />
+                  <StatCard
+                    value={collections.alerts?.count || 0}
+                    label="Alerts"
+                    icon={AlertTriangle}
+                    color="danger"
+                  />
+                </>
+              )}
             </div>
 
             <div className="info-cards-grid">
               <div className="info-card">
-                <h3><Database size={20} /> Data Source</h3>
-                <p>All data comes from <strong>MongoDB Atlas</strong> cloud database:</p>
+                <h3><Database size={20} /> Data Sources</h3>
+                <p><strong>Dual Database System:</strong></p>
                 <ul>
-                  <li>20 zones with population and critical sites</li>
-                  <li>500 households with baseline consumption</li>
-                  <li>360,000+ meter readings (hourly energy consumption)</li>
-                  <li>14,400+ air/climate readings (AQI, temperature, humidity)</li>
-                  <li>50 alerts (emergency, warning, watch levels)</li>
-                  <li>50 grid edges (zone connectivity)</li>
+                  <li><strong>City Live Mode:</strong> Local MongoDB stores processed data from live APIs. 20 zones per city with real coordinates.</li>
+                  <li><strong>Simulated Mode:</strong> MongoDB Atlas demo dataset (500 households, 360K+ meter readings, 14K+ air/climate readings)</li>
+                  <li><strong>Live APIs (City Mode):</strong> OpenWeatherMap (Weather), AirVisual (AQI), TomTom (Traffic), EIA (Energy), Census (Population), City 311 (Service Requests), OpenStreetMap (Infrastructure)</li>
+                  <li><strong>Processing:</strong> BackgroundProcessor runs every 5 minutes, fetches APIs, runs ML models, stores in local MongoDB</li>
                 </ul>
               </div>
 
               <div className="info-card">
                 <h3><Brain size={20} /> ML Models</h3>
-                <p>Three trained deep learning models:</p>
+                <p><strong>5 Models Processing Live Data:</strong></p>
                 <ul>
-                  <li><strong>LSTM:</strong> Demand forecasting (RMSE: 64.27, R²: 0.64)</li>
-                  <li><strong>Autoencoder:</strong> Anomaly detection (5.33% anomaly rate)</li>
-                  <li><strong>GNN:</strong> Zone risk scoring (95%+ accuracy)</li>
-                  <li><strong>ARIMA:</strong> Statistical forecasting (RMSE: 88.82)</li>
-                  <li><strong>Prophet:</strong> Seasonal forecasting (RMSE: 48.41, best performance)</li>
+                  <li><strong>LSTM:</strong> Demand forecasting from live city data (enhanced with weather)</li>
+                  <li><strong>Autoencoder:</strong> Real-time anomaly detection on processed zone data</li>
+                  <li><strong>GNN:</strong> Live risk scoring combining AQI, traffic, and demand patterns</li>
+                  <li><strong>ARIMA:</strong> Statistical forecasting for time-series patterns</li>
+                  <li><strong>Prophet:</strong> Seasonal forecasting with trend analysis</li>
                 </ul>
+                <p style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  <strong>In City Live:</strong> Models process data every 5 minutes. Results stored in <code>processed_zone_data</code> collection.
+                </p>
+                <p style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  <strong>In Simulated:</strong> Models show training metrics from historical dataset (RMSE, R² scores).
+                </p>
               </div>
 
               <div className="info-card">
                 <h3><Zap size={20} /> Key Features</h3>
                 <ul>
-                  <li>Real-time data from MongoDB Atlas</li>
-                  <li>Interactive charts and visualizations</li>
-                  <li>AI-powered predictions and recommendations</li>
-                  <li>Anomaly detection and alerting</li>
-                  <li>Zone risk assessment with network effects</li>
-                  <li>Model performance comparison</li>
+                  <li><strong>Mode Switcher</strong> (navbar) → Toggle between "City Live" and "Simulated" modes</li>
+                  <li><strong>City Selection</strong> (navbar → Active City) → Choose from NYC, Chicago, LA, SF, Houston, Phoenix</li>
+                  <li><strong>Live API Integration:</strong> Weather, AQI, Traffic, EIA, Census, 311, Infrastructure (OpenStreetMap)</li>
+                  <li><strong>Real-Time Processing:</strong> BackgroundProcessor runs every 5 minutes, processes all zones, stores in local MongoDB</li>
+                  <li><strong>AI Recommendations:</strong> OpenRouter LLM synthesizes all ML outputs into prioritized actions</li>
+                  <li><strong>Dynamic Pages:</strong> All pages adapt based on selected mode and city</li>
+                  <li><strong>Future:</strong> Kafka + Spark streaming for 40-50 second updates (coming soon)</li>
                 </ul>
               </div>
             </div>
@@ -398,31 +480,80 @@ export default function Guide() {
 
             <div className="architecture-explanation">
               <h3>How Data Flows Through the System</h3>
+              <div className="mode-tabs" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
+                <button 
+                  className={mode === 'city' ? 'active' : ''}
+                  style={{ padding: '0.5rem 1rem', background: mode === 'city' ? 'var(--accent-primary)' : 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '6px', color: mode === 'city' ? '#000' : 'var(--text-secondary)', cursor: 'pointer' }}
+                >
+                  City Live Flow
+                </button>
+                <button 
+                  className={mode === 'sim' ? 'active' : ''}
+                  style={{ padding: '0.5rem 1rem', background: mode === 'sim' ? 'var(--accent-primary)' : 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '6px', color: mode === 'sim' ? '#000' : 'var(--text-secondary)', cursor: 'pointer' }}
+                >
+                  Simulated Flow
+                </button>
+              </div>
               <div className="flow-details">
-                <div className="flow-item">
-                  <strong>1. MongoDB Atlas → Backend:</strong>
-                  <p>FastAPI queries MongoDB for time-series data, zones, alerts</p>
-                </div>
-                <div className="flow-item">
-                  <strong>2. Backend Processing:</strong>
-                  <p>Data is aggregated (hourly demand, daily AQI), correlations calculated, risk scores computed</p>
-                </div>
-                <div className="flow-item">
-                  <strong>3. ML Model Inference:</strong>
-                  <p>Trained models make predictions (LSTM), detect anomalies (Autoencoder), classify risk (GNN)</p>
-                </div>
-                <div className="flow-item">
-                  <strong>4. API Endpoints:</strong>
-                  <p>Backend exposes REST APIs: /api/data, /api/analytics, /api/models, /api/ai/recommendations</p>
-                </div>
-                <div className="flow-item">
-                  <strong>5. AI Synthesis (Gemini):</strong>
-                  <p>Gemini AI analyzes all ML model outputs, risk scores, alerts, and anomalies to generate prioritized, actionable recommendations</p>
-                </div>
-                <div className="flow-item">
-                  <strong>6. Frontend Display:</strong>
-                  <p>React fetches from APIs and displays interactive charts, maps, AI recommendations, and visualizations</p>
-                </div>
+                {mode === 'city' ? (
+                  <>
+                    <div className="flow-item">
+                      <strong>1. City Selection:</strong>
+                      <p>Select a city from <strong>Active City</strong> dropdown (navbar). System calculates 20 zone coordinates for that city and starts background processing.</p>
+                    </div>
+                    <div className="flow-item">
+                      <strong>2. Live API Fetching (Every 5 Minutes):</strong>
+                      <p><strong>BackgroundProcessor</strong> automatically fetches: Weather (OpenWeatherMap), AQI (AirVisual), Traffic (TomTom), EIA (Energy), Census (Population), City 311 (Service Requests), OpenStreetMap (Infrastructure). Data is fetched per zone.</p>
+                    </div>
+                    <div className="flow-item">
+                      <strong>3. ML Processing:</strong>
+                      <p>For each zone: <strong>LSTM</strong> forecasts demand (enhanced with weather), <strong>Autoencoder</strong> detects anomalies, <strong>GNN</strong> scores risk (combines AQI + traffic + demand), <strong>ARIMA/Prophet</strong> provide statistical forecasts.</p>
+                    </div>
+                    <div className="flow-item">
+                      <strong>4. Local MongoDB Storage:</strong>
+                      <p>All processed data stored in <strong>local MongoDB (CITY DB)</strong>: <code>processed_zone_data</code> (raw + ML outputs + recommendations), <code>weather_data</code>, <code>aqi_data</code>, <code>traffic_data</code>. Each document includes <code>city_id</code>.</p>
+                    </div>
+                    <div className="flow-item">
+                      <strong>5. FastAPI Serving:</strong>
+                      <p>FastAPI reads from CITY DB (mode-aware via <code>X-Data-Mode</code> header). Endpoints like <code>/api/city/processed-data</code> return live processed results.</p>
+                    </div>
+                    <div className="flow-item">
+                      <strong>6. AI Recommendations:</strong>
+                      <p><strong>OpenRouter LLM</strong> analyzes all ML outputs, risk scores, alerts, and live data → generates prioritized recommendations with cost-benefit analysis and implementation steps.</p>
+                    </div>
+                    <div className="flow-item">
+                      <strong>7. Frontend Display:</strong>
+                      <p>React dashboard displays live data. Pages auto-refresh every 30 seconds. All pages are mode-aware and show city-specific data.</p>
+                    </div>
+                    <div className="flow-item" style={{ borderLeftColor: '#ffaa00' }}>
+                      <strong>🚀 Future: Kafka + Spark Streaming:</strong>
+                      <p>Coming soon: Real-time streaming pipeline with Kafka (message broker) and Spark Structured Streaming for 40-50 second updates instead of 5-minute batches.</p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flow-item">
+                      <strong>1. MongoDB Atlas Data:</strong>
+                      <p>Historical demo dataset stored in MongoDB Atlas: 20 zones, 500 households, 360K+ meter readings, 14K+ air/climate readings.</p>
+                    </div>
+                    <div className="flow-item">
+                      <strong>2. Data Aggregation:</strong>
+                      <p>FastAPI queries MongoDB Atlas and aggregates data for analysis: hourly demand, AQI by zone, correlations.</p>
+                    </div>
+                    <div className="flow-item">
+                      <strong>3. ML Model Inference:</strong>
+                      <p>5 models (LSTM, Autoencoder, GNN, ARIMA, Prophet) use historical training data. Results show training metrics (RMSE, R²).</p>
+                    </div>
+                    <div className="flow-item">
+                      <strong>4. AI Synthesis (OpenRouter):</strong>
+                      <p>OpenRouter LLM analyzes ML outputs, risk, alerts → recommendations based on simulated data.</p>
+                    </div>
+                    <div className="flow-item">
+                      <strong>5. Frontend Display:</strong>
+                      <p>React shows charts, training metrics, and simulated data visualizations. Useful for testing and demonstration.</p>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </motion.div>
@@ -437,8 +568,8 @@ export default function Guide() {
           >
             <h2>Pages Guide - What Each Tab Does</h2>
             <p className="section-intro">
-              Navigate through each page to understand its purpose, data source, and outputs. 
-              All data is <strong>dynamic</strong> and comes from your MongoDB Atlas database.
+              Use the <strong>nav tabs</strong> (left) to move between pages; <strong>Active City</strong> (right) to select NYC, Chicago, LA, etc. 
+              Data is <strong>dynamic</strong>: MongoDB Atlas + live APIs (Weather, AQI, Traffic, EIA, 311). Hover nav links for tooltips.
             </p>
 
             <div className="pages-grid">

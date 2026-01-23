@@ -5,10 +5,11 @@ import {
   Activity, Network, ChevronRight, Info, Settings, 
   FastForward, SkipForward
 } from 'lucide-react';
-import { analyticsAPI, dataAPI } from '../services/api';
+import { analyticsAPI, dataAPI, cityAPI } from '../services/api';
+import { useAppMode } from '../utils/useAppMode';
 
-// Zone positions in a 5x4 grid layout
-const ZONE_POSITIONS = [
+// Zone positions in a 5x4 grid layout (for SIM mode)
+const ZONE_POSITIONS_SIM = [
   { id: 'Z_001', x: 120, y: 80 },
   { id: 'Z_002', x: 240, y: 80 },
   { id: 'Z_003', x: 360, y: 80 },
@@ -30,6 +31,15 @@ const ZONE_POSITIONS = [
   { id: 'Z_019', x: 480, y: 380 },
   { id: 'Z_020', x: 600, y: 380 },
 ];
+
+// Helper: Convert lat/lon coordinates to SVG positions
+const latLonToSVG = (lat, lon, bounds) => {
+  if (!bounds || !bounds.minLat || !bounds.maxLat) return { x: 0, y: 0 };
+  const { minLat, maxLat, minLon, maxLon } = bounds;
+  const x = ((lon - minLon) / (maxLon - minLon)) * 720;
+  const y = ((maxLat - lat) / (maxLat - minLat)) * 460; // Invert Y axis
+  return { x: Math.max(0, Math.min(720, x)), y: Math.max(0, Math.min(460, y)) };
+};
 
 // Energy particle component
 const EnergyParticle = ({ startX, startY, endX, endY, delay, duration, color }) => {
@@ -81,10 +91,13 @@ const RippleEffect = ({ cx, cy, color }) => {
 };
 
 export default function CityMap() {
+  const { mode } = useAppMode();
   const [loading, setLoading] = useState(true);
   const [zones, setZones] = useState([]);
   const [zoneRisk, setZoneRisk] = useState([]);
   const [gridEdges, setGridEdges] = useState([]);
+  const [zonePositions, setZonePositions] = useState([]);
+  const [currentCityId, setCurrentCityId] = useState(null);
   const [selectedZone, setSelectedZone] = useState(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const [simulationMode, setSimulationMode] = useState('realtime'); // realtime, lstm, gnn, cascade
@@ -95,22 +108,114 @@ export default function CityMap() {
   const [gnnStep, setGnnStep] = useState(0);
   const svgRef = useRef(null);
 
+  // Get current city ID when in City mode
+  useEffect(() => {
+    if (mode === 'city') {
+      cityAPI.getCurrentCity()
+        .then((r) => setCurrentCityId(r.data?.city_id || null))
+        .catch(() => setCurrentCityId(null));
+    } else {
+      setCurrentCityId(null);
+    }
+  }, [mode]);
+
+  // Listen for city changes
+  useEffect(() => {
+    if (mode !== 'city') return;
+    const onCityChanged = () => {
+      cityAPI.getCurrentCity()
+        .then((r) => setCurrentCityId(r.data?.city_id || null))
+        .catch(() => setCurrentCityId(null));
+    };
+    window.addEventListener('ugms-city-changed', onCityChanged);
+    window.addEventListener('ugms-city-processed', onCityChanged);
+    return () => {
+      window.removeEventListener('ugms-city-changed', onCityChanged);
+      window.removeEventListener('ugms-city-processed', onCityChanged);
+    };
+  }, [mode]);
+
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [mode, currentCityId]);
 
   const fetchData = async () => {
     try {
-      const [zonesRes, riskRes, edgesRes] = await Promise.all([
-        dataAPI.getZones(),
-        analyticsAPI.getZoneRisk(),
-        dataAPI.getGridEdges()
-      ]);
-      setZones(zonesRes.data.zones || []);
-      setZoneRisk(riskRes.data.data || []);
-      setGridEdges(edgesRes.data.edges || []);
+      if (mode === 'city' && currentCityId) {
+        // CITY LIVE MODE: Get zones from city coordinates and processed data
+        const [coordsRes, processedRes] = await Promise.all([
+          cityAPI.getZoneCoordinates(currentCityId),
+          cityAPI.getProcessedData(currentCityId, null, 100)
+        ]);
+        
+        const coords = coordsRes.data?.zones || [];
+        const processedZones = processedRes.data?.zones || [];
+        
+        // Calculate bounds for coordinate conversion
+        if (coords.length > 0) {
+          const lats = coords.map(z => z.lat);
+          const lons = coords.map(z => z.lon);
+          const bounds = {
+            minLat: Math.min(...lats),
+            maxLat: Math.max(...lats),
+            minLon: Math.min(...lons),
+            maxLon: Math.max(...lons)
+          };
+          
+          // Convert coordinates to SVG positions
+          const positions = coords.map(zone => ({
+            id: zone.zone_id,
+            x: latLonToSVG(zone.lat, zone.lon, bounds).x,
+            y: latLonToSVG(zone.lat, zone.lon, bounds).y
+          }));
+          setZonePositions(positions);
+        } else {
+          // Fallback: use SIM positions if no coordinates
+          setZonePositions(ZONE_POSITIONS_SIM);
+        }
+        
+        // Set zones from coordinates
+        setZones(coords.map(z => ({ id: z.zone_id, name: z.zone_id.replace('_', ' ').toUpperCase() })));
+        
+        // Extract risk scores from processed data
+        const risks = processedZones.map(zone => ({
+          zone_id: zone.zone_id,
+          risk_level: zone.ml_processed?.risk_score?.level || 'low',
+          risk_score: zone.ml_processed?.risk_score?.score || 0,
+          alert_count: zone.recommendations?.filter(r => r.priority === 'high' || r.priority === 'critical').length || 0
+        }));
+        setZoneRisk(risks);
+        
+        // Generate grid edges based on zone proximity (simple grid for now)
+        const edges = [];
+        for (let i = 0; i < coords.length; i++) {
+          for (let j = i + 1; j < coords.length; j++) {
+            const z1 = coords[i];
+            const z2 = coords[j];
+            const dist = Math.sqrt(Math.pow(z1.lat - z2.lat, 2) + Math.pow(z1.lon - z2.lon, 2));
+            // Connect zones within 0.05 degrees (roughly 5km)
+            if (dist < 0.05) {
+              edges.push({ from_zone: z1.zone_id, to_zone: z2.zone_id });
+            }
+          }
+        }
+        setGridEdges(edges);
+      } else {
+        // SIM MODE: Use existing SIM dataset
+        const [zonesRes, riskRes, edgesRes] = await Promise.all([
+          dataAPI.getZones(),
+          analyticsAPI.getZoneRisk(),
+          dataAPI.getGridEdges()
+        ]);
+        setZones(zonesRes.data.zones || []);
+        setZoneRisk(riskRes.data.data || []);
+        setGridEdges(edgesRes.data.edges || []);
+        setZonePositions(ZONE_POSITIONS_SIM);
+      }
     } catch (error) {
       console.error('Error fetching data:', error);
+      // Fallback to SIM positions on error
+      setZonePositions(ZONE_POSITIONS_SIM);
     } finally {
       setLoading(false);
     }
@@ -134,7 +239,7 @@ export default function CityMap() {
 
   // Get zone position
   const getZonePosition = (zoneId) => {
-    return ZONE_POSITIONS.find(z => z.id === zoneId) || { x: 0, y: 0 };
+    return zonePositions.find(z => z.id === zoneId) || { x: 0, y: 0 };
   };
 
   // Get neighbors of a zone
@@ -390,7 +495,7 @@ export default function CityMap() {
             })}
 
             {/* Draw zones */}
-            {ZONE_POSITIONS.map((pos, i) => {
+            {zonePositions && zonePositions.length > 0 ? zonePositions.map((pos, i) => {
               const zoneData = getZoneData(pos.id);
               const riskColor = getRiskColor(pos.id);
               const isSelected = selectedZone === pos.id;
@@ -476,7 +581,7 @@ export default function CityMap() {
                   )}
                 </g>
               );
-            })}
+            }) : null}
 
             {/* GNN Message Passing Animation */}
             {simulationMode === 'gnn' && selectedZone && (

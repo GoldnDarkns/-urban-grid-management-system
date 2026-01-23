@@ -1,14 +1,44 @@
 import { useState, useEffect } from 'react';
 import { Database, PlayCircle, Loader, AlertTriangle } from 'lucide-react';
-import { queriesAPI } from '../services/api';
+import { queriesAPI, cityAPI } from '../services/api';
+import { useAppMode } from '../utils/useAppMode';
 
 export default function MongoDBQueries() {
+  const { mode } = useAppMode();
   const [queries, setQueries] = useState([]);
   const [selectedQuery, setSelectedQuery] = useState(null);
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [currentCityId, setCurrentCityId] = useState(null);
   const [params, setParams] = useState({ zone_id: 'Z_001', limit: 10, hours: 24 });
+
+  // Get current city ID when in City mode
+  useEffect(() => {
+    if (mode === 'city') {
+      cityAPI.getCurrentCity()
+        .then((r) => setCurrentCityId(r.data?.city_id || null))
+        .catch(() => setCurrentCityId(null));
+    } else {
+      setCurrentCityId(null);
+    }
+  }, [mode]);
+
+  // Listen for city changes
+  useEffect(() => {
+    if (mode !== 'city') return;
+    const onCityChanged = () => {
+      cityAPI.getCurrentCity()
+        .then((r) => setCurrentCityId(r.data?.city_id || null))
+        .catch(() => setCurrentCityId(null));
+    };
+    window.addEventListener('ugms-city-changed', onCityChanged);
+    window.addEventListener('ugms-city-processed', onCityChanged);
+    return () => {
+      window.removeEventListener('ugms-city-changed', onCityChanged);
+      window.removeEventListener('ugms-city-processed', onCityChanged);
+    };
+  }, [mode]);
 
   useEffect(() => {
     loadQueries();
@@ -41,6 +71,10 @@ export default function MongoDBQueries() {
         queryParams.limit = params.limit;
       }
       
+      // Add city_id in City mode
+      if (mode === 'city' && currentCityId) {
+        queryParams.city_id = currentCityId;
+      }
       const response = await queriesAPI.executeQuery(queryId, queryParams);
       setResults(response.data);
     } catch (err) {
@@ -55,11 +89,20 @@ export default function MongoDBQueries() {
   const advancedQueries = queries.filter(q => q.type === 'advanced');
 
   return (
-    <div className="mongodb-queries">
-      <div className="section-header">
-        <h3><Database size={20} /> MongoDB Queries</h3>
-        <p>Execute and explore the 10 meaningful MongoDB queries</p>
-      </div>
+      <div className="mongodb-queries">
+        <div className="section-header">
+          <h3><Database size={20} /> MongoDB Queries</h3>
+          <p>
+            {mode === 'city' 
+              ? `Execute queries on live processed data for ${currentCityId ? currentCityId.toUpperCase() : 'selected city'}`
+              : 'Execute and explore the 10 meaningful MongoDB queries'}
+          </p>
+          {mode === 'city' && currentCityId && (
+            <p style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', marginTop: '0.5rem' }}>
+              🔴 Live Mode: Queries use processed_zone_data from CITY DB
+            </p>
+          )}
+        </div>
 
       <div className="queries-layout">
         <div className="queries-sidebar">

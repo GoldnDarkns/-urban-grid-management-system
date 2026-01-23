@@ -4,10 +4,12 @@ import {
   Zap, AlertTriangle, TrendingUp, Shield, 
   MapPin, Activity, Wind, Lightbulb, CheckCircle
 } from 'lucide-react';
-import { analyticsAPI, dataAPI, modelsAPI } from '../services/api';
+import { analyticsAPI, dataAPI, modelsAPI, cityAPI } from '../services/api';
 import { useZones } from '../utils/useZones';
+import { useAppMode } from '../utils/useAppMode';
 
 export default function Insights() {
+  const { mode } = useAppMode();
   const [loading, setLoading] = useState(true);
   const [zoneRisk, setZoneRisk] = useState([]);
   const [alerts, setAlerts] = useState([]);
@@ -15,31 +17,146 @@ export default function Insights() {
   const [anomalies, setAnomalies] = useState([]);
   const [lstmPrediction, setLstmPrediction] = useState(null);
   const [mlModels, setMlModels] = useState(null);
+  const [currentCityId, setCurrentCityId] = useState(null);
   const { formatZoneName } = useZones();
+
+  // Get current city ID when in City mode
+  useEffect(() => {
+    if (mode === 'city') {
+      cityAPI.getCurrentCity()
+        .then((r) => setCurrentCityId(r.data?.city_id || null))
+        .catch(() => setCurrentCityId(null));
+    } else {
+      setCurrentCityId(null);
+    }
+  }, [mode]);
+
+  // Listen for city changes
+  useEffect(() => {
+    if (mode !== 'city') return;
+    const onCityChanged = () => {
+      cityAPI.getCurrentCity()
+        .then((r) => setCurrentCityId(r.data?.city_id || null))
+        .catch(() => setCurrentCityId(null));
+    };
+    window.addEventListener('ugms-city-changed', onCityChanged);
+    window.addEventListener('ugms-city-processed', onCityChanged);
+    return () => {
+      window.removeEventListener('ugms-city-changed', onCityChanged);
+      window.removeEventListener('ugms-city-processed', onCityChanged);
+    };
+  }, [mode]);
 
   useEffect(() => {
     fetchData();
-    // Refresh data every 30 seconds
-    const interval = setInterval(fetchData, 30000);
+    // Refresh data every 30 seconds in City mode, 5 minutes in Sim mode
+    const interval = setInterval(fetchData, mode === 'city' ? 30000 : 300000);
     return () => clearInterval(interval);
-  }, []);
+  }, [mode, currentCityId]);
 
   const fetchData = async () => {
     try {
-      const [riskRes, alertsRes, summaryRes, anomaliesRes, lstmRes, modelsRes] = await Promise.all([
-        analyticsAPI.getZoneRisk(),
-        dataAPI.getAlerts(30),
-        analyticsAPI.getAlertsSummary(),
-        analyticsAPI.getAnomalies(2.5, 10),
-        modelsAPI.getLSTMPrediction().catch(() => ({ data: null })), // ML prediction
-        modelsAPI.getOverview().catch(() => ({ data: null })) // ML model metrics
-      ]);
-      setZoneRisk(riskRes.data.data || []);
-      setAlerts(alertsRes.data.alerts || []);
-      setAlertsSummary(summaryRes.data);
-      setAnomalies(anomaliesRes.data.anomalies || []);
-      setLstmPrediction(lstmRes.data);
-      setMlModels(modelsRes.data);
+      if (mode === 'city' && currentCityId) {
+        // CITY LIVE MODE: Use processed_zone_data
+        const processedRes = await cityAPI.getProcessedData(currentCityId, null, 100);
+        const zones = processedRes.data?.zones || [];
+        
+        // 1. Zone Risk from processed_zone_data.ml_processed.risk_score
+        const risks = zones.map(zone => ({
+          zone_id: zone.zone_id,
+          zone_name: zone.zone_id.replace('_', ' ').toUpperCase(),
+          risk_level: zone.ml_processed?.risk_score?.level || 'low',
+          risk_score: zone.ml_processed?.risk_score?.score || 0,
+          alert_count: zone.recommendations?.filter(r => r.priority === 'high' || r.priority === 'critical').length || 0,
+          aqi: { avg_aqi: zone.raw_data?.aqi?.aqi || 0 },
+          demand: { total_kwh: zone.ml_processed?.demand_forecast?.next_hour_kwh || 0 },
+          critical_sites: zone.raw_data?.infrastructure?.critical_sites || []
+        }));
+        setZoneRisk(risks);
+        
+        // 2. Alerts from recommendations
+        const allAlerts = [];
+        zones.forEach(zone => {
+          zone.recommendations?.forEach(rec => {
+            if (rec.priority === 'high' || rec.priority === 'critical') {
+              allAlerts.push({
+                id: `${zone.zone_id}-${rec.action}`,
+                zone_id: zone.zone_id,
+                level: rec.priority === 'critical' ? 'emergency' : 'alert',
+                message: rec.action,
+                type: rec.type || 'recommendation',
+                ts: zone.timestamp
+              });
+            }
+          });
+        });
+        setAlerts(allAlerts);
+        
+        // 3. Alerts Summary
+        const summary = { total: allAlerts.length, by_level: {} };
+        allAlerts.forEach(a => {
+          summary.by_level[a.level] = (summary.by_level[a.level] || 0) + 1;
+        });
+        setAlertsSummary(summary);
+        
+        // 4. Anomalies from anomaly_detection
+        const anomaliesList = zones
+          .filter(z => z.ml_processed?.anomaly_detection?.is_anomaly)
+          .map(zone => ({
+            zone_id: zone.zone_id,
+            household_id: zone.zone_id, // Use zone_id as identifier
+            kwh: zone.ml_processed.anomaly_detection.current_demand || 0,
+            baseline_hourly: zone.ml_processed.anomaly_detection.baseline_mean || 0,
+            multiplier: zone.ml_processed.anomaly_detection.anomaly_score || 0,
+            timestamp: zone.timestamp
+          }));
+        setAnomalies(anomaliesList);
+        
+        // 5. LSTM Prediction (aggregate from all zones)
+        const totalForecast = zones.reduce((sum, z) => {
+          return sum + (z.ml_processed?.demand_forecast?.next_hour_kwh || 0);
+        }, 0);
+        const avgConfidence = zones.length > 0
+          ? zones.reduce((sum, z) => sum + (z.ml_processed?.demand_forecast?.confidence || 0), 0) / zones.length
+          : 0;
+        setLstmPrediction({
+          prediction: totalForecast,
+          unit: 'kWh',
+          confidence: avgConfidence,
+          last_actual: totalForecast * 0.95 // Estimate
+        });
+        
+        // 6. ML Models overview (simplified for live mode)
+        setMlModels({
+          models: [
+            {
+              name: 'LSTM',
+              status: 'live',
+              metrics: {
+                r2_score: null,
+                rmse: null,
+                mae: null
+              }
+            }
+          ]
+        });
+      } else {
+        // SIM MODE: Use existing SIM dataset APIs
+        const [riskRes, alertsRes, summaryRes, anomaliesRes, lstmRes, modelsRes] = await Promise.all([
+          analyticsAPI.getZoneRisk(),
+          dataAPI.getAlerts(30),
+          analyticsAPI.getAlertsSummary(),
+          analyticsAPI.getAnomalies(2.5, 10),
+          modelsAPI.getLSTMPrediction().catch(() => ({ data: null })),
+          modelsAPI.getOverview().catch(() => ({ data: null }))
+        ]);
+        setZoneRisk(riskRes.data.data || []);
+        setAlerts(alertsRes.data.alerts || []);
+        setAlertsSummary(summaryRes.data);
+        setAnomalies(anomaliesRes.data.anomalies || []);
+        setLstmPrediction(lstmRes.data);
+        setMlModels(modelsRes.data);
+      }
     } catch (error) {
       console.error('Error fetching insights:', error);
     } finally {

@@ -5,16 +5,44 @@ import {
   Database, Brain, BarChart3, Zap, ArrowRight,
   Server, Activity, Network, AlertTriangle, CheckCircle2
 } from 'lucide-react';
-import { healthCheck, dataAPI } from '../services/api';
+import { healthCheck, dataAPI, cityAPI } from '../services/api';
+import { useAppMode } from '../utils/useAppMode';
 import StatCard from '../components/StatCard';
 import TronArchitectureDiagram from '../components/TronArchitectureDiagram';
 
 export default function Home() {
+  const { mode } = useAppMode();
   const [status, setStatus] = useState(null);
   const [dbStatus, setDbStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [layerGlows, setLayerGlows] = useState({ data: 0, ml: 0, api: 0, ui: 0 });
+  const [processingSummary, setProcessingSummary] = useState(null);
+  const [currentCity, setCurrentCity] = useState(null);
   const archRef = useRef(null);
+
+  useEffect(() => {
+    if (mode === 'city') {
+      cityAPI.getCurrentCity().then((r) => setCurrentCity(r.data)).catch(() => {});
+      cityAPI.getProcessingSummary().then((r) => setProcessingSummary(r.data)).catch(() => {});
+    } else {
+      setCurrentCity(null);
+      setProcessingSummary(null);
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== 'city') return;
+    const onCityChanged = () => {
+      cityAPI.getCurrentCity().then((r) => setCurrentCity(r.data)).catch(() => {});
+      cityAPI.getProcessingSummary().then((r) => setProcessingSummary(r.data)).catch(() => {});
+    };
+    window.addEventListener('ugms-city-changed', onCityChanged);
+    window.addEventListener('ugms-city-processed', onCityChanged);
+    return () => {
+      window.removeEventListener('ugms-city-changed', onCityChanged);
+      window.removeEventListener('ugms-city-processed', onCityChanged);
+    };
+  }, [mode]);
 
   useEffect(() => {
     const fetchStatus = async () => {
@@ -26,7 +54,7 @@ export default function Home() {
         });
         
         // Get data status which has more reliable MongoDB connection info
-        const dataPromise = dataAPI.getStatus().catch(err => {
+        const dataPromise = dataAPI.getStatus(mode === 'city' ? (currentCity?.city_id || null) : null).catch(err => {
           console.error('Data status check failed:', err);
           return { data: { connected: false, error: err.message } };
         });
@@ -49,9 +77,34 @@ export default function Home() {
       }
     };
     fetchStatus();
-  }, []);
+  }, [mode, currentCity?.city_id]);
 
-  const features = [
+  const features = mode === 'city' ? [
+    {
+      icon: Server,
+      title: 'Live API Integration',
+      description: 'Real-time data from OpenWeatherMap, AirVisual, TomTom, EIA, Census, and City 311 APIs',
+      color: 'secondary'
+    },
+    {
+      icon: Activity,
+      title: 'Real-Time ML Processing',
+      description: 'LSTM, Autoencoder, and GNN models processing live city data every 5 minutes',
+      color: 'primary'
+    },
+    {
+      icon: Database,
+      title: 'Local Data Storage',
+      description: 'Processed data stored locally in MongoDB for selected cities with zone-level analytics',
+      color: 'secondary'
+    },
+    {
+      icon: Brain,
+      title: 'AI Recommendations',
+      description: 'OpenRouter LLM analyzes all ML outputs and provides prioritized actionable recommendations',
+      color: 'purple'
+    }
+  ] : [
     {
       icon: Database,
       title: 'MongoDB Integration',
@@ -138,35 +191,21 @@ export default function Home() {
           <div className="hero-stats">
             {!loading && dbStatus && (
               <>
-                <StatCard 
-                  value={dbStatus.collections?.zones?.count || 0}
-                  label="Zones"
-                  icon={Server}
-                  color="secondary"
-                  delay={0.1}
-                />
-                <StatCard 
-                  value={dbStatus.collections?.households?.count || 0}
-                  label="Households"
-                  icon={Database}
-                  color="primary"
-                  delay={0.2}
-                />
-                <StatCard 
-                  value={Math.round((dbStatus.collections?.meter_readings?.count || 0) / 1000)}
-                  label="K Readings"
-                  icon={Activity}
-                  color="warning"
-                  suffix="K"
-                  delay={0.3}
-                />
-                <StatCard 
-                  value={dbStatus.collections?.alerts?.count || 0}
-                  label="Alerts"
-                  icon={AlertTriangle}
-                  color="danger"
-                  delay={0.4}
-                />
+                {dbStatus.mode === 'city' ? (
+                  <>
+                    <StatCard value={processingSummary?.summary?.successful || dbStatus.collections?.processed_zone_data?.count || 0} label="Zones" icon={Server} color="secondary" delay={0.1} />
+                    <StatCard value={dbStatus.collections?.processed_zone_data?.count || 0} label="Processed" icon={Activity} color="primary" delay={0.2} />
+                    <StatCard value={dbStatus.collections?.weather_data?.count || 0} label="Weather" icon={Database} color="warning" delay={0.3} />
+                    <StatCard value={dbStatus.collections?.aqi_data?.count || 0} label="AQI" icon={AlertTriangle} color="danger" delay={0.4} />
+                  </>
+                ) : (
+                  <>
+                    <StatCard value={dbStatus.collections?.zones?.count || 0} label="Zones" icon={Server} color="secondary" delay={0.1} />
+                    <StatCard value={dbStatus.collections?.households?.count || 0} label="Households" icon={Database} color="primary" delay={0.2} />
+                    <StatCard value={Math.round((dbStatus.collections?.meter_readings?.count || 0) / 1000)} label="K Readings" icon={Activity} color="warning" suffix="K" delay={0.3} />
+                    <StatCard value={dbStatus.collections?.alerts?.count || 0} label="Alerts" icon={AlertTriangle} color="danger" delay={0.4} />
+                  </>
+                )}
               </>
             )}
           </div>
@@ -208,6 +247,29 @@ export default function Home() {
           </div>
         </motion.div>
       </section>
+
+      {/* Processed data for current city */}
+      {processingSummary?.summary && (
+        <section className="status-section container">
+          <motion.div
+            className="status-card processed-card"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+          >
+            <div className="status-header">
+              <Database size={24} />
+              <h2>Processed for your city</h2>
+            </div>
+            <div className="processed-summary-inline">
+              <span><strong>{processingSummary.summary.successful ?? 0}</strong> zones</span>
+              <span>Live APIs: Weather, AQI, Traffic, Population, EIA</span>
+              <span>ML: LSTM, Autoencoder, GNN, ARIMA, Prophet</span>
+              <span className="processed-where">Results on: <Link to="/data">Data</Link>, <Link to="/analytics">Analytics</Link>, <Link to="/advanced-analytics">Advanced</Link>, <Link to="/ai-recommendations">AI Recs</Link></span>
+            </div>
+          </motion.div>
+        </section>
+      )}
 
       {/* Features Grid */}
       <section className="features-section container">
@@ -465,6 +527,18 @@ export default function Home() {
         .status-error {
           color: var(--accent-danger);
         }
+
+        .processed-summary-inline {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.5rem 1.5rem;
+          color: var(--text-secondary);
+          font-size: 0.9rem;
+        }
+        .processed-summary-inline strong { color: var(--accent-primary); }
+        .processed-where { margin-top: 0.25rem; }
+        .processed-where a { color: var(--accent-secondary); text-decoration: none; }
+        .processed-where a:hover { text-decoration: underline; color: var(--accent-primary); }
 
         .features-section {
           margin-bottom: 3rem;

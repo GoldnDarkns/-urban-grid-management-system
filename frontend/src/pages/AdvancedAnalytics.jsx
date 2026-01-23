@@ -5,7 +5,8 @@ import {
   TrendingUp, Code, PlayCircle, Loader, BarChart3,
   Layers, Target, Zap, Info, GitCompare
 } from 'lucide-react';
-import { modelsAPI, queriesAPI, analyticsAPI } from '../services/api';
+import { modelsAPI, queriesAPI, analyticsAPI, cityAPI } from '../services/api';
+import { useAppMode } from '../utils/useAppMode';
 import LSTM from './LSTM';
 import Autoencoder from './Autoencoder';
 import GNN from './GNN';
@@ -14,18 +15,128 @@ import MongoDBQueries from '../components/MongoDBQueries';
 import { ChevronRight } from 'lucide-react';
 
 export default function AdvancedAnalytics() {
+  const { mode } = useAppMode();
   const [activeTab, setActiveTab] = useState('overview');
   const [modelsOverview, setModelsOverview] = useState(null);
+  const [liveMLOutputs, setLiveMLOutputs] = useState(null);
+  const [currentCityId, setCurrentCityId] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Get current city ID when in City mode
+  useEffect(() => {
+    if (mode === 'city') {
+      cityAPI.getCurrentCity()
+        .then((r) => setCurrentCityId(r.data?.city_id || null))
+        .catch(() => setCurrentCityId(null));
+    } else {
+      setCurrentCityId(null);
+    }
+  }, [mode]);
+
+  // Listen for city changes
+  useEffect(() => {
+    if (mode !== 'city') return;
+    const onCityChanged = () => {
+      cityAPI.getCurrentCity()
+        .then((r) => setCurrentCityId(r.data?.city_id || null))
+        .catch(() => setCurrentCityId(null));
+    };
+    window.addEventListener('ugms-city-changed', onCityChanged);
+    window.addEventListener('ugms-city-processed', onCityChanged);
+    return () => {
+      window.removeEventListener('ugms-city-changed', onCityChanged);
+      window.removeEventListener('ugms-city-processed', onCityChanged);
+    };
+  }, [mode]);
 
   useEffect(() => {
     fetchOverview();
-  }, []);
+  }, [mode, currentCityId]);
 
   const fetchOverview = async () => {
     try {
-      const response = await modelsAPI.getOverview();
-      setModelsOverview(response.data);
+      if (mode === 'city' && currentCityId) {
+        // CITY LIVE MODE: Get live ML outputs from processed_zone_data
+        const processedRes = await cityAPI.getProcessedData(currentCityId, null, 100);
+        const zones = processedRes.data?.zones || [];
+        
+        // Aggregate live ML outputs
+        const lstmOutputs = zones.map(z => ({
+          zone_id: z.zone_id,
+          forecast: z.ml_processed?.demand_forecast?.next_hour_kwh || 0,
+          confidence: z.ml_processed?.demand_forecast?.confidence || 0
+        }));
+        
+        const autoencoderOutputs = zones.map(z => ({
+          zone_id: z.zone_id,
+          is_anomaly: z.ml_processed?.anomaly_detection?.is_anomaly || false,
+          anomaly_score: z.ml_processed?.anomaly_detection?.anomaly_score || 0
+        }));
+        
+        const gnnOutputs = zones.map(z => ({
+          zone_id: z.zone_id,
+          risk_score: z.ml_processed?.risk_score?.score || 0,
+          risk_level: z.ml_processed?.risk_score?.level || 'low'
+        }));
+        
+        // Create live overview
+        const avgLSTMConfidence = lstmOutputs.length > 0 
+          ? lstmOutputs.reduce((sum, o) => sum + o.confidence, 0) / lstmOutputs.length 
+          : 0;
+        const anomalyCount = autoencoderOutputs.filter(o => o.is_anomaly).length;
+        const avgAnomalyScore = autoencoderOutputs.length > 0
+          ? autoencoderOutputs.reduce((sum, o) => sum + o.anomaly_score, 0) / autoencoderOutputs.length
+          : 0;
+        const highRiskCount = gnnOutputs.filter(o => o.risk_level === 'high').length;
+        const avgRiskScore = gnnOutputs.length > 0
+          ? gnnOutputs.reduce((sum, o) => sum + o.risk_score, 0) / gnnOutputs.length
+          : 0;
+        
+        setLiveMLOutputs({
+          lstm: { outputs: lstmOutputs, avgConfidence: avgLSTMConfidence },
+          autoencoder: { outputs: autoencoderOutputs, anomalyCount, avgScore: avgAnomalyScore },
+          gnn: { outputs: gnnOutputs, highRiskCount, avgScore: avgRiskScore },
+          totalZones: zones.length
+        });
+        
+        // Create models overview for display
+        setModelsOverview({
+          models: [
+            {
+              name: 'LSTM',
+              purpose: 'Demand forecasting from live city data',
+              status: 'live',
+              metrics: {
+                'Avg Confidence': `${(avgLSTMConfidence * 100).toFixed(1)}%`,
+                'Zones Processed': lstmOutputs.length
+              }
+            },
+            {
+              name: 'Autoencoder',
+              purpose: 'Anomaly detection on real-time data',
+              status: 'live',
+              metrics: {
+                'Anomalies Detected': anomalyCount,
+                'Avg Anomaly Score': avgAnomalyScore.toFixed(2)
+              }
+            },
+            {
+              name: 'GNN',
+              purpose: 'Risk scoring from network analysis',
+              status: 'live',
+              metrics: {
+                'High Risk Zones': highRiskCount,
+                'Avg Risk Score': avgRiskScore.toFixed(1)
+              }
+            }
+          ]
+        });
+      } else {
+        // SIM MODE: Use training metrics
+        const response = await modelsAPI.getOverview();
+        setModelsOverview(response.data);
+        setLiveMLOutputs(null);
+      }
     } catch (error) {
       console.error('Error fetching models overview:', error);
     } finally {
@@ -60,7 +171,11 @@ export default function AdvancedAnalytics() {
           animate={{ opacity: 1, y: 0 }}
         >
           <h2>Advanced Analytics & Machine Learning</h2>
-          <p>Comprehensive deep learning models and database queries for urban grid management</p>
+          <p>
+            {mode === 'city' 
+              ? `Live ML outputs from ${currentCityId ? currentCityId.toUpperCase() : 'selected city'} - Real-time processing`
+              : 'Comprehensive deep learning models and database queries for urban grid management'}
+          </p>
         </motion.div>
 
         {/* Models Grid */}
@@ -101,8 +216,8 @@ export default function AdvancedAnalytics() {
                 ))}
               </div>
               <div className="model-status">
-                <span className={`status-badge ${model.status === 'trained' ? 'trained' : 'pending'}`}>
-                  {model.status === 'trained' ? '✓ Trained' : 'Pending'}
+                <span className={`status-badge ${model.status === 'live' ? 'live' : model.status === 'trained' ? 'trained' : 'pending'}`}>
+                  {model.status === 'live' ? '🔴 Live' : model.status === 'trained' ? '✓ Trained' : 'Pending'}
                 </span>
               </div>
             </motion.div>
@@ -409,6 +524,12 @@ export default function AdvancedAnalytics() {
           font-weight: 600;
         }
 
+        .status-badge.live {
+          background: rgba(255, 68, 102, 0.2);
+          color: #ff4466;
+          animation: pulse-live 2s ease-in-out infinite;
+        }
+
         .status-badge.trained {
           background: rgba(0, 255, 136, 0.2);
           color: var(--accent-primary);
@@ -417,6 +538,11 @@ export default function AdvancedAnalytics() {
         .status-badge.pending {
           background: rgba(255, 170, 0, 0.2);
           color: var(--accent-warning);
+        }
+
+        @keyframes pulse-live {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.7; }
         }
 
         .quick-stats {

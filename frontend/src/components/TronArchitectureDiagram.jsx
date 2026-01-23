@@ -41,9 +41,9 @@ export default function TronArchitectureDiagram({ isFullscreen = false, onToggle
         color: '#00d4ff',
         description: 'Real-time & Historical Data Collection',
         components: [
-          { id: 'mongodb', label: 'MongoDB Atlas', width: 200, height: 65, details: ['8 Collections', '360K+ Documents', 'Time-Series'] },
+          { id: 'mongodb', label: 'MongoDB (Dual)', width: 200, height: 65, details: ['Atlas: Sim Data', 'Local: City Data', 'Time-Series'] },
           { id: 'indexes', label: 'Optimized Indexes', width: 200, height: 65, details: ['10+ Indexes', 'Fast Queries', 'Real-time'] },
-          { id: 'sources', label: 'Data Sources', width: 200, height: 65, details: ['Smart Meters', 'AQI Sensors', 'Weather APIs'] },
+          { id: 'sources', label: 'Live APIs', width: 200, height: 65, details: ['OpenWeatherMap • AirVisual', 'TomTom • EIA • Census', 'City 311 • 20 Zones/City'] },
         ]
       },
       {
@@ -53,9 +53,9 @@ export default function TronArchitectureDiagram({ isFullscreen = false, onToggle
         color: '#00ff88',
         description: '5 AI Models for Prediction & Analysis',
         components: [
-          { id: 'forecast', label: 'Demand Forecasting', width: 240, height: 70, details: ['LSTM • ARIMA • Prophet', 'Predict Energy Demand', 'R²: 0.86'] },
-          { id: 'anomaly', label: 'Anomaly Detection', width: 240, height: 70, details: ['Autoencoder', 'Detect Abnormal Patterns', '5.33% Anomaly Rate'] },
-          { id: 'risk', label: 'Risk Assessment', width: 240, height: 70, details: ['Graph Neural Network', 'Zone Risk Scoring', 'Network Effects'] },
+          { id: 'forecast', label: 'Demand Forecasting', width: 240, height: 70, details: ['LSTM • ARIMA • Prophet', 'Live City Data Processing', 'Every 5 Minutes'] },
+          { id: 'anomaly', label: 'Anomaly Detection', width: 240, height: 70, details: ['Autoencoder', 'Real-time Pattern Analysis', 'Per-Zone Detection'] },
+          { id: 'risk', label: 'Risk Assessment', width: 240, height: 70, details: ['Graph Neural Network', 'Live Risk Scoring', 'AQI + Traffic + Demand'] },
         ]
       },
       {
@@ -65,8 +65,8 @@ export default function TronArchitectureDiagram({ isFullscreen = false, onToggle
         color: '#ffaa00',
         description: 'Real-time Data Processing & API',
         components: [
-          { id: 'fastapi', label: 'FastAPI Backend', width: 280, height: 65, details: ['30+ REST Endpoints', 'Real-time Analytics', 'Query Execution'] },
-          { id: 'ai', label: 'AI Recommendations', width: 280, height: 65, details: ['Gemini AI Integration', 'Synthesized Insights', 'Prioritized Actions'] },
+          { id: 'fastapi', label: 'FastAPI Backend', width: 280, height: 65, details: ['30+ REST Endpoints', 'BackgroundProcessor (5min)', 'Mode-Aware Routing'] },
+          { id: 'ai', label: 'AI Recommendations', width: 280, height: 65, details: ['OpenRouter LLM', 'Analyzes All ML Outputs', 'Prioritized Actions'] },
         ]
       },
       {
@@ -76,9 +76,9 @@ export default function TronArchitectureDiagram({ isFullscreen = false, onToggle
         color: '#aa66ff',
         description: 'Actionable Intelligence Dashboard',
         components: [
-          { id: 'dashboard', label: 'Real-time Dashboard', width: 220, height: 65, details: ['Live Monitoring', 'System Status', 'Key Metrics'] },
+          { id: 'dashboard', label: 'Real-time Dashboard', width: 220, height: 65, details: ['Live Monitoring', 'City Selector', 'Key Metrics'] },
           { id: 'recommendations', label: 'AI Recommendations', width: 220, height: 65, details: ['Prioritized Actions', 'Cost-Benefit Analysis', 'Simulations'] },
-          { id: 'visualizations', label: 'Interactive Analytics', width: 220, height: 65, details: ['Charts & Graphs', 'Zone Comparisons', 'Trend Analysis'] },
+          { id: 'visualizations', label: 'Interactive Analytics', width: 220, height: 65, details: ['Charts & Graphs', 'Zone Comparisons', 'Live API Data'] },
         ]
       }
     ];

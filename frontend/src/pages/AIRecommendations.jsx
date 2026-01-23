@@ -9,25 +9,56 @@ import {
 import { aiAPI } from '../services/api';
 import { Link } from 'react-router-dom';
 import { useZones } from '../utils/useZones';
+import { useAppMode } from '../utils/useAppMode';
+import { cityAPI } from '../services/api';
 
 export default function AIRecommendations() {
+  const { mode } = useAppMode();
   const [recommendations, setRecommendations] = useState([]);
   const [systemState, setSystemState] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [selectedRec, setSelectedRec] = useState(null);
+  const [currentCityId, setCurrentCityId] = useState(null);
   const { formatZoneName, formatZoneNames, getZone } = useZones();
+
+  // Get current city ID when in City mode
+  useEffect(() => {
+    if (mode === 'city') {
+      cityAPI.getCurrentCity()
+        .then((r) => setCurrentCityId(r.data?.city_id || null))
+        .catch(() => setCurrentCityId(null));
+    } else {
+      setCurrentCityId(null);
+    }
+  }, [mode]);
+
+  // Listen for city changes
+  useEffect(() => {
+    if (mode !== 'city') return;
+    const onCityChanged = () => {
+      cityAPI.getCurrentCity()
+        .then((r) => setCurrentCityId(r.data?.city_id || null))
+        .catch(() => setCurrentCityId(null));
+    };
+    window.addEventListener('ugms-city-changed', onCityChanged);
+    window.addEventListener('ugms-city-processed', onCityChanged);
+    return () => {
+      window.removeEventListener('ugms-city-changed', onCityChanged);
+      window.removeEventListener('ugms-city-processed', onCityChanged);
+    };
+  }, [mode]);
 
   useEffect(() => {
     fetchRecommendations();
-  }, []);
+  }, [mode, currentCityId]);
 
   const fetchRecommendations = async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await aiAPI.getRecommendations();
+      const response = await aiAPI.getRecommendations(mode === 'city' ? currentCityId : null);
       if (response.data.error) {
         setError(response.data.error);
         if (response.data.raw_response) {
