@@ -56,16 +56,18 @@ export default function Home() {
         // Get data status which has more reliable MongoDB connection info
         const dataPromise = dataAPI.getStatus(mode === 'city' ? (currentCity?.city_id || null) : null).catch(err => {
           console.error('Data status check failed:', err);
-          return { data: { connected: false, error: err.message } };
+          const isNetworkError = err.code === 'ERR_NETWORK' || err.response?.status === 502 || err.response?.status === 504;
+          return { data: { connected: false, error: err.message, apiUnreachable: isNetworkError } };
         });
         
         const [health, data] = await Promise.all([healthPromise, dataPromise]);
         
-        // Use data status for MongoDB connection (more reliable)
+        // If status failed due to 502/504 or network, show API unreachable; else use DB status
+        const apiUnreachable = data.data?.apiUnreachable === true;
         const dbConnected = data.data?.connected === true;
         setStatus({
-          status: health.data?.status || 'healthy',
-          database: dbConnected ? 'connected' : 'disconnected'
+          status: health.data?.status || (apiUnreachable ? 'unreachable' : 'healthy'),
+          database: apiUnreachable ? 'unreachable' : (dbConnected ? 'connected' : 'disconnected')
         });
         setDbStatus(data.data);
       } catch (error) {
@@ -89,7 +91,7 @@ export default function Home() {
     {
       icon: Activity,
       title: 'Real-Time ML Processing',
-      description: 'LSTM, Autoencoder, and GNN models processing live city data every 5 minutes',
+      description: 'TFT (primary), LSTM (comparison), Autoencoder, and GNN models processing live city data every 5 minutes',
       color: 'primary'
     },
     {
@@ -113,7 +115,7 @@ export default function Home() {
     },
     {
       icon: Activity,
-      title: 'LSTM Forecasting',
+      title: 'TFT Forecasting',
       description: 'Deep learning model for energy demand prediction using historical patterns',
       color: 'primary'
     },
@@ -134,7 +136,7 @@ export default function Home() {
   const quickLinks = [
     { path: '/data', label: 'View Data', icon: Database, color: 'secondary' },
     { path: '/analytics', label: 'Analytics', icon: BarChart3, color: 'primary' },
-    { path: '/lstm', label: 'LSTM Model', icon: Activity, color: 'primary' },
+    { path: '/advanced-analytics', label: 'TFT & ML Models', icon: Activity, color: 'primary' },
     { path: '/insights', label: 'Insights', icon: Zap, color: 'warning' }
   ];
 
@@ -193,7 +195,7 @@ export default function Home() {
               <>
                 {dbStatus.mode === 'city' ? (
                   <>
-                    <StatCard value={processingSummary?.summary?.successful || dbStatus.collections?.processed_zone_data?.count || 0} label="Zones" icon={Server} color="secondary" delay={0.1} />
+                    <StatCard value={dbStatus.collections?.processed_zone_data?.distinct_zones ?? dbStatus.collections?.processed_zone_data?.count ?? 0} label="Zones" icon={Server} color="secondary" delay={0.1} />
                     <StatCard value={dbStatus.collections?.processed_zone_data?.count || 0} label="Processed" icon={Activity} color="primary" delay={0.2} />
                     <StatCard value={dbStatus.collections?.weather_data?.count || 0} label="Weather" icon={Database} color="warning" delay={0.3} />
                     <StatCard value={dbStatus.collections?.aqi_data?.count || 0} label="AQI" icon={AlertTriangle} color="danger" delay={0.4} />
@@ -236,7 +238,7 @@ export default function Home() {
               <CheckCircle2 className={(status?.database === 'connected' || dbStatus?.connected) ? 'status-ok' : 'status-error'} />
               <span>MongoDB</span>
               <span className={`badge ${(status?.database === 'connected' || dbStatus?.connected) ? 'badge-success' : 'badge-danger'}`}>
-                {status?.database === 'connected' || dbStatus?.connected ? 'connected' : (status?.database === 'disconnected' || !dbStatus?.connected ? 'disconnected' : 'checking...')}
+                {status?.database === 'connected' || dbStatus?.connected ? 'connected' : (status?.database === 'unreachable' ? 'API unreachable' : (status?.database === 'disconnected' || !dbStatus?.connected ? 'disconnected' : 'checking...'))}
               </span>
             </div>
             <div className="status-item">
@@ -245,6 +247,11 @@ export default function Home() {
               <span className="badge badge-success">trained</span>
             </div>
           </div>
+          {mode === 'sim' && status?.database !== 'connected' && !dbStatus?.connected && (
+            <p className="status-hint status-hint-sim">
+              Simulated mode uses MongoDB Atlas. Set <code>SIM_MONGO_URI</code> and <code>SIM_MONGO_DB</code> in <code>.env</code> to your Atlas connection string, then restart the backend.
+            </p>
+          )}
         </motion.div>
       </section>
 
@@ -264,7 +271,7 @@ export default function Home() {
             <div className="processed-summary-inline">
               <span><strong>{processingSummary.summary.successful ?? 0}</strong> zones</span>
               <span>Live APIs: Weather, AQI, Traffic, Population, EIA</span>
-              <span>ML: LSTM, Autoencoder, GNN, ARIMA, Prophet</span>
+              <span>ML: TFT, LSTM (comparison), Autoencoder, GNN, ARIMA, Prophet</span>
               <span className="processed-where">Results on: <Link to="/data">Data</Link>, <Link to="/analytics">Analytics</Link>, <Link to="/advanced-analytics">Advanced</Link>, <Link to="/ai-recommendations">AI Recs</Link></span>
             </div>
           </motion.div>
@@ -362,7 +369,7 @@ export default function Home() {
               color: `rgb(${Math.round(180 + layerGlows.ml * 75)}, 255, ${Math.round(200 + layerGlows.ml * 55)})`
             }}>ML Layer</h4>
             <div className="arch-items">
-              <div className="arch-item lstm" style={{ borderColor: `rgba(0, 255, 136, ${0.4 + layerGlows.ml * 0.6})` }}>LSTM Forecasting</div>
+              <div className="arch-item lstm" style={{ borderColor: `rgba(0, 255, 136, ${0.4 + layerGlows.ml * 0.6})` }}>TFT Demand Forecasting</div>
               <div className="arch-item autoencoder" style={{ borderColor: `rgba(255, 170, 0, ${0.4 + layerGlows.ml * 0.6})` }}>Autoencoder Anomaly</div>
               <div className="arch-item gnn" style={{ borderColor: `rgba(170, 102, 255, ${0.4 + layerGlows.ml * 0.6})` }}>GNN Risk Scoring</div>
             </div>
@@ -526,6 +533,19 @@ export default function Home() {
 
         .status-error {
           color: var(--accent-danger);
+        }
+
+        .status-hint {
+          margin-top: 1rem;
+          font-size: 0.875rem;
+          color: var(--text-secondary);
+          line-height: 1.5;
+        }
+        .status-hint-sim code {
+          background: rgba(0, 212, 255, 0.15);
+          padding: 0.15rem 0.4rem;
+          border-radius: 4px;
+          font-size: 0.8rem;
         }
 
         .processed-summary-inline {

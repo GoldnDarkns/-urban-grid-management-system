@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Home, Database, BarChart3, Brain, 
   Activity, Network, Zap, Box, FileText, Eye, AlertTriangle, GitCompare, Map, BookOpen, ClipboardList,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, DollarSign, Radio
 } from 'lucide-react';
 import CitySelector from './CitySelector';
 import ModeSwitcher from './ModeSwitcher';
@@ -16,15 +16,17 @@ const CITY_NAV = [
   { path: '/data', label: 'Data', icon: Database, order: 3, group: 'core', tooltip: 'MongoDB collections, zones, alerts' },
   // Analytics Group
   { path: '/analytics', label: 'Analytics', icon: BarChart3, order: 4, group: 'analytics', tooltip: 'Demand, AQI, correlations, anomalies' },
-  { path: '/advanced-analytics', label: 'Advanced', icon: Brain, order: 5, group: 'analytics', tooltip: 'ML models (LSTM, GNN, etc.) & MongoDB queries' },
+  { path: '/advanced-analytics', label: 'Advanced', icon: Brain, order: 5, group: 'analytics', tooltip: 'ML models (TFT, LSTM comparison, GNN, etc.) & MongoDB queries' },
   { path: '/ai-recommendations', label: 'AI Recs', icon: Brain, order: 6, group: 'analytics', tooltip: 'AI-powered prioritized recommendations' },
   { path: '/insights', label: 'Insights', icon: Zap, order: 7, group: 'analytics', tooltip: 'Forecasts, alerts, anomalies' },
+  { path: '/cost', label: 'Cost', icon: DollarSign, order: 8, group: 'analytics', tooltip: 'Energy, CO₂, AQI & 311 incident cost estimates' },
+  { path: '/live-stream', label: 'Live Stream', icon: Radio, order: 9, group: 'analytics', tooltip: 'Kafka → MongoDB live feed, updates ~45s' },
   // Visualization
-  { path: '/citymap', label: 'City Map', icon: Map, order: 8, group: 'viz', tooltip: '2D zone map with real city coordinates' },
-  { path: '/visualizations', label: 'Viz', icon: Eye, order: 9, group: 'viz', tooltip: 'Heatmaps, zone comparison' },
+  { path: '/citymap', label: 'City Map', icon: Map, order: 10, group: 'viz', tooltip: '2D zone map with real city coordinates' },
+  { path: '/visualizations', label: 'Viz', icon: Eye, order: 11, group: 'viz', tooltip: 'Heatmaps, zone comparison' },
   // Management
-  { path: '/incidents', label: 'Incidents', icon: ClipboardList, order: 10, group: 'mgmt', tooltip: 'City 311 service requests & tracking' },
-  { path: '/reports', label: 'Reports', icon: FileText, order: 11, group: 'mgmt', tooltip: 'Generate & export reports' },
+  { path: '/incidents', label: 'Incidents', icon: ClipboardList, order: 12, group: 'mgmt', tooltip: 'City 311 service requests & tracking' },
+  { path: '/reports', label: 'Reports', icon: FileText, order: 13, group: 'mgmt', tooltip: 'Generate & export reports' },
 ];
 
 const SIM_NAV = [
@@ -34,18 +36,18 @@ const SIM_NAV = [
   { path: '/data', label: 'Data', icon: Database, order: 3, group: 'core', tooltip: 'MongoDB collections explorer' },
   // Analytics Group
   { path: '/analytics', label: 'Analytics', icon: BarChart3, order: 4, group: 'analytics', tooltip: 'Demand, AQI, correlations, anomalies' },
-  { path: '/advanced-analytics', label: 'Advanced', icon: Brain, order: 5, group: 'analytics', tooltip: 'ML models (LSTM, GNN, etc.) & MongoDB queries' },
+  { path: '/advanced-analytics', label: 'Advanced', icon: Brain, order: 5, group: 'analytics', tooltip: 'ML models (TFT, LSTM comparison, GNN, etc.) & MongoDB queries' },
   { path: '/ai-recommendations', label: 'AI Recs', icon: Brain, order: 6, group: 'analytics', tooltip: 'AI-powered prioritized recommendations' },
   { path: '/insights', label: 'Insights', icon: Zap, order: 7, group: 'analytics', tooltip: 'Forecasts, alerts, anomalies' },
-  // Visualization
-  { path: '/citymap', label: '2D Grid', icon: Map, order: 8, group: 'viz', tooltip: '2D zone grid visualization' },
-  { path: '/simulation', label: 'Disaster Sim', icon: Zap, order: 9, group: 'viz', tooltip: 'Disaster scenario simulation' },
+  // Visualization (Live Stream and Disaster Sim removed - only available in City Live mode)
+  { path: '/citymap', label: '2D Grid', icon: Map, order: 9, group: 'viz', tooltip: '2D zone grid visualization' },
   { path: '/simulation3d', label: '3D', icon: Box, order: 10, group: 'viz', tooltip: '3D simulation view' },
   { path: '/visualizations', label: 'Viz', icon: Eye, order: 11, group: 'viz', tooltip: 'Heatmaps, zone comparison' },
-  // Note: LSTM, Autoencoder, GNN, and Compare are now inside Advanced Analytics page, not separate nav items
+  // Note: TFT, LSTM (comparison), Autoencoder, GNN, and Compare are inside Advanced Analytics page
   // Management
-  { path: '/admin/queries', label: 'Admin', icon: Database, order: 16, group: 'mgmt', tooltip: 'Manage MongoDB queries (admin)' },
-  { path: '/reports', label: 'Reports', icon: FileText, order: 17, group: 'mgmt', tooltip: 'Export simulated reports' },
+  { path: '/incidents', label: 'Incidents', icon: ClipboardList, order: 14, group: 'mgmt', tooltip: 'Simulated incident reports & NLP' },
+  { path: '/admin/data', label: 'Admin', icon: Database, order: 15, group: 'mgmt', tooltip: 'MongoDB Atlas Admin - View, edit, delete data' },
+  { path: '/reports', label: 'Reports', icon: FileText, order: 16, group: 'mgmt', tooltip: 'Export simulated reports' },
 ];
 
 export default function Navbar() {
@@ -147,7 +149,7 @@ export default function Navbar() {
           <span className="nav-context-label">Active City</span>
           <div className="nav-city-selector">
             <CitySelector onProcessingComplete={(data) => { if (data?.city_id && typeof sessionStorage !== 'undefined') sessionStorage.setItem('city_selected', data.city_id); }} />
-            <Link to="/select-city" className="nav-change-city" title="Choose a different city and reprocess">Change city</Link>
+            <button type="button" className="nav-change-city" title="Choose a different city and reprocess" onClick={() => window.dispatchEvent(new CustomEvent('ugms-open-city-selector'))}>Change city</button>
           </div>
         </div>
       )}
@@ -395,6 +397,11 @@ export default function Navbar() {
           color: var(--accent-secondary);
           opacity: 0.8;
           text-decoration: none;
+          background: none;
+          border: none;
+          cursor: pointer;
+          padding: 0;
+          font: inherit;
         }
         .nav-change-city:hover { color: var(--accent-primary); text-decoration: underline; }
 

@@ -47,16 +47,75 @@ export default function Data() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [status, zonesData, alertsData, edges] = await Promise.all([
-        dataAPI.getStatus(mode === 'city' ? currentCityId : null),
-        dataAPI.getZones(mode === 'city' ? currentCityId : null),
-        dataAPI.getAlerts(20, null, mode === 'city' ? currentCityId : null),
-        dataAPI.getGridEdges()
-      ]);
-      setDbStatus(status.data);
-      setZones(zonesData.data.zones);
-      setAlerts(alertsData.data.alerts);
-      setGridEdges(edges.data);
+      if (mode === 'city' && currentCityId) {
+        const [status, alertsData, edges, processedRes, zoneCoordsRes] = await Promise.all([
+          dataAPI.getStatus(currentCityId),
+          dataAPI.getAlerts(20, null, currentCityId),
+          dataAPI.getGridEdges(),
+          cityAPI.getProcessedData(currentCityId, null, 100).catch(() => ({ data: { zones: [] } })),
+          cityAPI.getZoneCoordinates(currentCityId).catch(() => ({ data: { zones: [] } }))
+        ]);
+        setDbStatus(status.data);
+        setAlerts(alertsData.data?.alerts || []);
+        setGridEdges(edges.data);
+
+        const processed = processedRes.data?.zones || [];
+        const coords = zoneCoordsRes.data?.zones || [];
+        const nameByZone = new Map(coords.filter(z => z.zone_id && z.name).map(z => [z.zone_id, z.name]));
+        const latestByZone = new Map();
+        processed.forEach((z) => {
+          const id = z.zone_id;
+          if (!latestByZone.has(id)) latestByZone.set(id, z);
+        });
+        let zoneList = Array.from(latestByZone.entries()).map(([zone_id, z]) => ({
+          id: zone_id,
+          name: nameByZone.get(zone_id) || zone_id.replace(/_/g, ' '),
+          population_est: z.raw_data?.population_est ?? null,
+          grid_priority: z.raw_data?.grid_priority ?? 3,
+          critical_sites: z.raw_data?.critical_sites ?? [],
+          // Additional data from processed_zone_data
+          aqi: z.raw_data?.aqi?.aqi ?? null,
+          aqi_pm25: z.raw_data?.aqi?.pm25 ?? null,
+          demand_forecast: z.ml_processed?.demand_forecast?.next_hour_kwh ?? null,
+          risk_score: z.ml_processed?.risk_score?.score ?? null,
+          risk_level: z.ml_processed?.risk_score?.level ?? null,
+          is_anomaly: z.ml_processed?.anomaly_detection?.is_anomaly ?? false,
+          temperature: z.raw_data?.weather?.temp ?? z.raw_data?.weather?.temperature ?? null,
+          weather_desc: z.raw_data?.weather?.description ?? null,
+          traffic_congestion: z.raw_data?.traffic?.congestion_level ?? null
+        }));
+        if (zoneList.length === 0 && coords.length > 0) {
+          zoneList = coords.map((z) => ({
+            id: z.zone_id,
+            name: z.name || z.zone_id?.replace(/_/g, ' ') || z.zone_id,
+            population_est: null,
+            grid_priority: 3,
+            critical_sites: []
+          }));
+        }
+        setZones(zoneList);
+      } else if (mode === 'city' && !currentCityId) {
+        const [status, alertsData, edges] = await Promise.all([
+          dataAPI.getStatus(null),
+          dataAPI.getAlerts(20, null, null),
+          dataAPI.getGridEdges()
+        ]);
+        setDbStatus(status.data);
+        setZones([]);
+        setAlerts(alertsData.data?.alerts || []);
+        setGridEdges(edges.data);
+      } else {
+        const [status, zonesData, alertsData, edges] = await Promise.all([
+          dataAPI.getStatus(mode === 'city' ? currentCityId : null),
+          dataAPI.getZones(mode === 'city' ? currentCityId : null),
+          dataAPI.getAlerts(20, null, mode === 'city' ? currentCityId : null),
+          dataAPI.getGridEdges()
+        ]);
+        setDbStatus(status.data);
+        setZones(zonesData.data?.zones || []);
+        setAlerts(alertsData.data?.alerts || []);
+        setGridEdges(edges.data);
+      }
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -126,12 +185,12 @@ export default function Data() {
                 {mode === 'city' ? (
                   <>
                     <StatCard
-                      value={collections.processed_zone_data?.count || 0}
+                      value={collections.processed_zone_data?.distinct_zones ?? collections.processed_zone_data?.count ?? 0}
                       label="Zones"
                       icon={MapPin}
                       color="primary"
                       delay={0.1}
-                      tooltip="20 zones per city with processed data"
+                      tooltip="Unique zones with processed data (count varies by city)"
                     />
                     <StatCard
                       value={collections.weather_data?.count || 0}
@@ -172,18 +231,11 @@ export default function Data() {
                       delay={0.2}
                     />
                     <StatCard
-                      value={collections.policies?.count || 0}
-                      label="Policies"
-                      icon={FileText}
-                      color="purple"
-                      delay={0.3}
-                    />
-                    <StatCard
                       value={collections.grid_edges?.count || 0}
                       label="Grid Edges"
                       icon={GitBranch}
                       color="secondary"
-                      delay={0.4}
+                      delay={0.3}
                     />
                   </>
                 )}
@@ -210,7 +262,9 @@ export default function Data() {
               <div className="collections-detail">
                 <h3>Collection Indexes</h3>
                 <div className="collections-grid">
-                  {Object.entries(collections).map(([name, info]) => (
+                  {Object.entries(collections)
+                    .filter(([name]) => (dbStatus?.mode === 'sim' && name === 'policies') ? false : true)
+                    .map(([name, info]) => (
                     <div key={name} className="collection-card">
                       <h4>{name}</h4>
                       <div className="collection-count">{(info.count || 0).toLocaleString()} documents</div>
@@ -234,43 +288,109 @@ export default function Data() {
               animate={{ opacity: 1 }}
             >
               <div className="table-container">
+                {zones.length === 0 ? (
+                  <div className="data-empty-state">
+                    <MapPin size={48} />
+                    <h3>No zones to display</h3>
+                    <p>
+                      {mode === 'city'
+                        ? 'Select a city and run processing to see zones. Zone names and data come from processed results and zone coordinates.'
+                        : 'Zones will appear here from the simulated dataset.'}
+                    </p>
+                    <p className="process-flow">
+                      1. Select city → 2. Run processing → 3. Data, Alerts &amp; Analytics update.
+                    </p>
+                  </div>
+                ) : (
                 <table>
                   <thead>
                     <tr>
                       <th>Zone ID</th>
                       <th>Name</th>
-                      <th>Population</th>
                       <th>Grid Priority</th>
-                      <th>Critical Sites</th>
+                      {mode === 'city' && (
+                        <>
+                          <th>AQI</th>
+                          <th>Demand (kWh)</th>
+                          <th>Risk</th>
+                          <th>Status</th>
+                        </>
+                      )}
+                      {mode !== 'city' && (
+                        <>
+                          <th>Population</th>
+                          <th>Critical Sites</th>
+                        </>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
-                    {zones.map((zone, index) => (
-                      <motion.tr
-                        key={zone.id}
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: index * 0.05 }}
-                      >
-                        <td className="code" title={zone.id}>{zone.id}</td>
-                        <td><strong>{zone.name}</strong></td>
-                        <td>{zone.population_est?.toLocaleString()}</td>
-                        <td>
-                          <span className={`priority-badge priority-${zone.grid_priority}`}>
-                            P{zone.grid_priority}
-                          </span>
-                        </td>
-                        <td>
-                          <div className="critical-sites">
-                            {zone.critical_sites?.map(site => (
-                              <span key={site} className="site-badge">{site}</span>
-                            ))}
-                          </div>
-                        </td>
-                      </motion.tr>
-                    ))}
+                    {zones.map((zone, index) => {
+                      const p = Math.max(1, Math.min(5, Number(zone.grid_priority) || 3));
+                      return (
+                        <motion.tr
+                          key={zone.id}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: index * 0.05 }}
+                        >
+                          <td className="code" title={zone.id}>{zone.id}</td>
+                          <td><strong>{zone.name || zone.id}</strong></td>
+                          <td>
+                            <span className={`priority-badge priority-${p}`}>
+                              P{p}
+                            </span>
+                          </td>
+                          {mode === 'city' && (
+                            <>
+                              <td>
+                                {zone.aqi != null ? (
+                                  <span className={`aqi-badge aqi-${zone.aqi > 150 ? 'high' : zone.aqi > 100 ? 'moderate' : 'good'}`}>
+                                    {Math.round(zone.aqi)}
+                                  </span>
+                                ) : '—'}
+                              </td>
+                              <td>
+                                {zone.demand_forecast != null ? (
+                                  <span className="demand-value">{Math.round(zone.demand_forecast)}</span>
+                                ) : '—'}
+                              </td>
+                              <td>
+                                {zone.risk_level ? (
+                                  <span className={`risk-badge risk-${zone.risk_level}`}>
+                                    {zone.risk_level} ({zone.risk_score != null ? Math.round(zone.risk_score) : '—'})
+                                  </span>
+                                ) : '—'}
+                              </td>
+                              <td>
+                                {zone.is_anomaly && (
+                                  <span className="anomaly-badge" title="Anomaly detected">⚠️</span>
+                                )}
+                                {zone.traffic_congestion === 'severe' && (
+                                  <span className="traffic-badge" title="Severe traffic">🚦</span>
+                                )}
+                                {!zone.is_anomaly && zone.traffic_congestion !== 'severe' && '—'}
+                              </td>
+                            </>
+                          )}
+                          {mode !== 'city' && (
+                            <>
+                              <td>{zone.population_est != null ? Number(zone.population_est).toLocaleString() : '—'}</td>
+                              <td>
+                                <div className="critical-sites">
+                                  {zone.critical_sites?.length ? zone.critical_sites.map(site => (
+                                    <span key={site} className="site-badge">{site}</span>
+                                  )) : '—'}
+                                </div>
+                              </td>
+                            </>
+                          )}
+                        </motion.tr>
+                      );
+                    })}
                   </tbody>
                 </table>
+                )}
               </div>
             </motion.div>
           )}
@@ -282,6 +402,20 @@ export default function Data() {
               animate={{ opacity: 1 }}
             >
               <div className="table-container">
+                {alerts.length === 0 ? (
+                  <div className="data-empty-state">
+                    <AlertTriangle size={48} />
+                    <h3>No alerts yet</h3>
+                    <p>
+                      {mode === 'city'
+                        ? 'City Live: Alerts appear when anomalies or grid issues are detected during processing. Select a city and run processing to see alerts.'
+                        : 'Alerts will appear here when constraint events or grid issues are logged.'}
+                    </p>
+                    <p className="process-flow">
+                      1. Select city → 2. Run processing → 3. Data, Alerts &amp; Analytics update.
+                    </p>
+                  </div>
+                ) : (
                 <table>
                   <thead>
                     <tr>
@@ -318,6 +452,7 @@ export default function Data() {
                     ))}
                   </tbody>
                 </table>
+                )}
               </div>
             </motion.div>
           )}
@@ -495,6 +630,40 @@ export default function Data() {
         .priority-1 { background: rgba(255, 68, 102, 0.2); color: var(--accent-danger); }
         .priority-2 { background: rgba(255, 170, 0, 0.2); color: var(--accent-warning); }
         .priority-3 { background: rgba(0, 255, 136, 0.2); color: var(--accent-primary); }
+        .priority-4 { background: rgba(255, 170, 0, 0.2); color: #ffaa00; }
+        .priority-5 { background: rgba(255, 68, 68, 0.2); color: #ff4444; }
+
+        .aqi-badge {
+          padding: 0.25rem 0.6rem;
+          border-radius: 12px;
+          font-size: 0.75rem;
+          font-weight: 600;
+        }
+        .aqi-badge.aqi-good { background: rgba(0, 255, 136, 0.2); color: #00ff88; }
+        .aqi-badge.aqi-moderate { background: rgba(255, 170, 0, 0.2); color: #ffaa00; }
+        .aqi-badge.aqi-high { background: rgba(255, 68, 68, 0.2); color: #ff4444; }
+
+        .demand-value {
+          font-family: var(--font-mono);
+          font-weight: 600;
+          color: var(--accent-primary);
+        }
+
+        .risk-badge {
+          padding: 0.25rem 0.6rem;
+          border-radius: 12px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          text-transform: capitalize;
+        }
+        .risk-badge.risk-low { background: rgba(0, 255, 136, 0.15); color: #00ff88; }
+        .risk-badge.risk-medium { background: rgba(255, 170, 0, 0.15); color: #ffaa00; }
+        .risk-badge.risk-high { background: rgba(255, 68, 68, 0.15); color: #ff4444; }
+
+        .anomaly-badge, .traffic-badge {
+          font-size: 1.2rem;
+          display: inline-block;
+        }
         .priority-4 { background: rgba(0, 212, 255, 0.2); color: var(--accent-secondary); }
         .priority-5 { background: rgba(170, 102, 255, 0.2); color: var(--accent-purple); }
 
@@ -510,6 +679,38 @@ export default function Data() {
           background: rgba(0, 212, 255, 0.15);
           color: var(--accent-secondary);
           border-radius: 4px;
+        }
+
+        .data-empty-state {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          min-height: 240px;
+          gap: 1rem;
+          padding: 2rem;
+          text-align: center;
+          color: var(--text-secondary);
+        }
+        .data-empty-state svg {
+          color: var(--accent-secondary);
+          opacity: 0.6;
+        }
+        .data-empty-state h3 {
+          font-size: 1.1rem;
+          color: var(--text-primary);
+          margin: 0;
+        }
+        .data-empty-state p {
+          margin: 0;
+          font-size: 0.9rem;
+          max-width: 480px;
+        }
+        .data-empty-state .process-flow {
+          margin-top: 0.75rem;
+          font-size: 0.8rem;
+          color: var(--accent-primary);
+          font-weight: 500;
         }
 
         .graph-info {

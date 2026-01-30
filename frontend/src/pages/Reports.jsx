@@ -5,9 +5,12 @@ import {
   Activity, Wind, AlertTriangle, Building2, Zap,
   FileSpreadsheet, File, Clock, CheckCircle, Loader
 } from 'lucide-react';
-import { analyticsAPI, dataAPI, modelsAPI } from '../services/api';
+import { analyticsAPI, dataAPI, modelsAPI, cityAPI } from '../services/api';
+import { useAppMode } from '../utils/useAppMode';
 
 export default function Reports() {
+  const { mode } = useAppMode();
+  const [currentCityId, setCurrentCityId] = useState(null);
   const [selectedReport, setSelectedReport] = useState(null);
   const [dateRange, setDateRange] = useState('7d');
   const [generating, setGenerating] = useState(false);
@@ -21,11 +24,69 @@ export default function Reports() {
   });
 
   useEffect(() => {
+    if (mode === 'city') {
+      cityAPI.getCurrentCity().then((r) => setCurrentCityId(r.data?.city_id || null)).catch(() => setCurrentCityId(null));
+    } else {
+      setCurrentCityId(null);
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== 'city') return;
+    const onCityChanged = () => {
+      cityAPI.getCurrentCity().then((r) => setCurrentCityId(r.data?.city_id || null)).catch(() => setCurrentCityId(null));
+    };
+    window.addEventListener('ugms-city-changed', onCityChanged);
+    window.addEventListener('ugms-city-processed', onCityChanged);
+    return () => {
+      window.removeEventListener('ugms-city-changed', onCityChanged);
+      window.removeEventListener('ugms-city-processed', onCityChanged);
+    };
+  }, [mode]);
+
+  useEffect(() => {
     fetchReportData();
-  }, []);
+  }, [mode, currentCityId]);
 
   const fetchReportData = async () => {
     try {
+      if (mode === 'city' && !currentCityId) return;
+      if (mode === 'city' && currentCityId) {
+        const [processedRes, zoneCoordsRes, costsRes] = await Promise.all([
+          cityAPI.getProcessedData(currentCityId, null, 100).catch(() => ({ data: { zones: [] } })),
+          cityAPI.getZoneCoordinates(currentCityId).catch(() => ({ data: { zones: [] } })),
+          cityAPI.getCosts(currentCityId).catch(() => ({ data: {} }))
+        ]);
+        const zones = processedRes.data?.zones || [];
+        const zoneCoords = zoneCoordsRes.data?.zones || [];
+        const zoneNameMap = new Map(zoneCoords.map((z) => [z.zone_id, z.name || z.zone_id]));
+        const demandData = zones.map((z) => {
+          const kwh = z.ml_processed?.demand_forecast?.next_hour_kwh ?? 0;
+          return { zone_id: z.zone_id, total_kwh: kwh, avg_kwh: kwh };
+        }).filter((d) => d.total_kwh > 0);
+        const aqiByZone = {};
+        zones.forEach((z) => {
+          const aqi = z.raw_data?.aqi?.aqi ?? z.ml_processed?.aqi_prediction?.next_hour_aqi ?? 0;
+          if (z.zone_id) aqiByZone[z.zone_id] = { avg_aqi: aqi };
+        });
+        const riskList = zones.map((z) => ({
+          zone_id: z.zone_id,
+          risk_score: z.ml_processed?.risk_score?.score ?? 0
+        }));
+        const zoneList = (zoneCoords.length ? zoneCoords : zones).map((z) => ({
+          _id: z.zone_id || z._id,
+          name: zoneNameMap.get(z.zone_id) || z.name || z.zone_id
+        }));
+        const alertsTotal = zones.filter((z) => z.ml_processed?.risk_score?.level === 'high').length;
+        setReportData({
+          demand: { data: demandData },
+          aqi: { data: aqiByZone },
+          zones: { zones: zoneList },
+          models: { models: [{ name: 'Live', status: 'live', description: 'City processed data' }], source: 'city' },
+          alerts: { total: alertsTotal, by_level: { emergency: alertsTotal } }
+        });
+        return;
+      }
       const [demandRes, aqiRes, zonesRes, modelsRes, alertsRes] = await Promise.all([
         analyticsAPI.getHourlyDemand(null, 168).catch(() => ({ data: null })),
         analyticsAPI.getAQIByZone().catch(() => ({ data: null })),
@@ -33,7 +94,6 @@ export default function Reports() {
         modelsAPI.getOverview().catch(() => ({ data: null })),
         analyticsAPI.getAlertsSummary().catch(() => ({ data: null }))
       ]);
-      
       setReportData({
         demand: demandRes.data,
         aqi: aqiRes.data,

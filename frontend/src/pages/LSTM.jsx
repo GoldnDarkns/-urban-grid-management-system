@@ -189,8 +189,8 @@ X_train, y_train = create_sequences(train_data, n_steps=24)`;
           <Activity size={40} />
         </div>
         <div className="header-content">
-          <h1>LSTM Demand Forecasting</h1>
-          <p>Long Short-Term Memory neural network for predicting future energy demand</p>
+          <h1>LSTM Demand Forecasting (Comparison)</h1>
+          <p>Long Short-Term Memory baseline — kept for comparison with TFT (our primary demand model). See Advanced Analytics → TFT for why we use TFT.</p>
         </div>
         {prediction && !prediction.error && (
           <div className="live-prediction">

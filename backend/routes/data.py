@@ -1,7 +1,11 @@
 """
 Data API routes - MongoDB data access endpoints.
+
+Supports two modes:
+- sim: simulated/demo dataset (Atlas)
+- city: live city processing dataset (local/offline)
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Query
 from typing import Optional, List
 from datetime import datetime, timedelta, timezone
 import sys
@@ -14,26 +18,43 @@ from pymongo.errors import ConnectionFailure
 
 router = APIRouter()
 
+def _get_mode(request: Request) -> str:
+    mode = (request.headers.get("x-data-mode") or request.headers.get("X-Data-Mode") or "").strip().lower()
+    return mode if mode in ("city", "sim") else "sim"
+
 
 def safe_get_db():
     """Safely get database connection, return None if connection fails."""
     try:
         # Try to ping first to check connection
-        if not ping():
+        if not ping("sim"):
             return None
-        return get_db()
+        return get_db("sim")
     except Exception as e:
         # Catch all exceptions including ConnectionFailure
         print(f"Safe get_db failed: {e}")
         return None
 
+def safe_get_db_mode(mode: str):
+    """Safely get DB based on mode ('sim' or 'city')."""
+    purpose = "city" if mode == "city" else "sim"
+    try:
+        if not ping(purpose):
+            return None
+        return get_db(purpose)
+    except Exception as e:
+        print(f"Safe get_db({purpose}) failed: {e}")
+        return None
+
 
 @router.get("/status")
-async def get_database_status():
-    """Get MongoDB connection status and database info."""
+async def get_database_status(request: Request, city_id: Optional[str] = Query(None)):
+    """Get MongoDB connection status and database info. Uses short timeout so client does not see connection reset."""
     try:
-        # Use fast ping from connection pool
-        is_connected = ping()
+        mode = _get_mode(request)
+        purpose = "city" if mode == "city" else "sim"
+        # Use 5s timeout so we respond quickly when MongoDB is unreachable (avoids ERR_CONNECTION_RESET from long wait)
+        is_connected = ping(purpose, timeout_ms=5000)
         
         if not is_connected:
             return {
@@ -45,7 +66,7 @@ async def get_database_status():
         
         # Try to get database - catch any exceptions
         try:
-            db = safe_get_db()
+            db = safe_get_db_mode(mode)
             if db is None:
                 return {
                     "connected": False,
@@ -71,9 +92,22 @@ async def get_database_status():
         
         # Get collection stats with fast estimated counts
         collections = {}
-        collection_names = ["zones", "households", "policies", "grid_edges", 
-                          "meter_readings", "air_climate_readings", 
-                          "constraint_events", "alerts"]
+        if mode == "city":
+            collection_names = [
+                "zones",
+                "processed_zone_data",
+                "city_processing_summary",
+                "weather_data",
+                "aqi_data",
+                "traffic_data",
+                "eia_electricity_data",
+                "eia_co2_emissions",
+                "alerts",
+            ]
+        else:
+            collection_names = ["zones", "households", "policies", "grid_edges",
+                              "meter_readings", "air_climate_readings",
+                              "constraint_events", "alerts"]
         
         for coll_name in collection_names:
             try:
@@ -85,15 +119,33 @@ async def get_database_status():
                     count = coll.estimated_document_count()
                 else:
                     # Use exact count for smaller collections
-                    count = coll.count_documents({})
+                    if mode == "city" and city_id and coll_name in [
+                        "zones",
+                        "processed_zone_data",
+                        "city_processing_summary",
+                        "weather_data",
+                        "aqi_data",
+                        "traffic_data",
+                        "eia_electricity_data",
+                        "eia_co2_emissions",
+                        "alerts",
+                    ]:
+                        count = coll.count_documents({"city_id": city_id})
+                    else:
+                        count = coll.count_documents({})
                 
                 # Get indexes
                 indexes = list(coll.index_information().keys())
                 
-                collections[coll_name] = {
-                    "count": count,
-                    "indexes": indexes
-                }
+                out = {"count": count, "indexes": indexes}
+                # City mode: distinct zone count for processed_zone_data (unique zones, not doc count)
+                if mode == "city" and city_id and coll_name == "processed_zone_data":
+                    try:
+                        distinct_zones = coll.distinct("zone_id", {"city_id": city_id})
+                        out["distinct_zones"] = len(distinct_zones)
+                    except Exception:
+                        out["distinct_zones"] = None
+                collections[coll_name] = out
             except Exception as e:
                 collections[coll_name] = {
                     "count": 0,
@@ -104,6 +156,8 @@ async def get_database_status():
         return {
             "connected": True,
             "database": db.name,
+            "mode": mode,
+            "city_id": city_id,
             "collections": collections
         }
     except Exception as e:
@@ -123,14 +177,18 @@ async def get_database_status():
 
 
 @router.get("/zones")
-async def get_zones():
+async def get_zones(request: Request, city_id: Optional[str] = Query(None)):
     """Get all zones with their details."""
     try:
-        db = safe_get_db()
+        mode = _get_mode(request)
+        db = safe_get_db_mode(mode)
         if db is None:
             return {"zones": [], "count": 0, "error": "MongoDB connection failed"}
-        
-        zones = list(db.zones.find())
+
+        query = {}
+        if mode == "city" and city_id:
+            query["city_id"] = city_id
+        zones = list(db.zones.find(query))
         
         # Convert ObjectId to string
         for zone in zones:
@@ -142,14 +200,18 @@ async def get_zones():
 
 
 @router.get("/zones/{zone_id}")
-async def get_zone(zone_id: str):
+async def get_zone(request: Request, zone_id: str, city_id: Optional[str] = Query(None)):
     """Get a specific zone by ID."""
     try:
-        db = safe_get_db()
+        mode = _get_mode(request)
+        db = safe_get_db_mode(mode)
         if db is None:
             return {"error": "MongoDB connection failed"}
         
-        zone = db.zones.find_one({"_id": zone_id})
+        query = {"_id": zone_id}
+        if mode == "city" and city_id:
+            query["city_id"] = city_id
+        zone = db.zones.find_one(query)
         
         if not zone:
             return {"error": "Zone not found"}
@@ -189,10 +251,13 @@ async def get_zone(zone_id: str):
 
 
 @router.get("/households")
-async def get_households(limit: int = 50, zone_id: Optional[str] = None):
+async def get_households(request: Request, limit: int = 50, zone_id: Optional[str] = None):
     """Get households with optional zone filter."""
     try:
-        db = safe_get_db()
+        mode = _get_mode(request)
+        if mode == "city":
+            return {"households": [], "count": 0, "mode": "city", "message": "Households are available in SIM dataset only."}
+        db = safe_get_db_mode(mode)
         if db is None:
             return {"households": [], "count": 0, "error": "MongoDB connection failed"}
         
@@ -211,10 +276,13 @@ async def get_households(limit: int = 50, zone_id: Optional[str] = None):
 
 
 @router.get("/policies")
-async def get_policies():
+async def get_policies(request: Request):
     """Get all policies."""
     try:
-        db = safe_get_db()
+        mode = _get_mode(request)
+        if mode == "city":
+            return {"policies": [], "count": 0, "mode": "city", "message": "Policies are available in SIM dataset only."}
+        db = safe_get_db_mode(mode)
         if db is None:
             return {"policies": [], "count": 0, "error": "MongoDB connection failed"}
         policies = list(db.policies.find())
@@ -228,10 +296,13 @@ async def get_policies():
 
 
 @router.get("/grid-edges")
-async def get_grid_edges():
+async def get_grid_edges(request: Request):
     """Get zone adjacency graph edges."""
     try:
-        db = safe_get_db()
+        mode = _get_mode(request)
+        if mode == "city":
+            return {"edges": [], "adjacency": {}, "count": 0, "mode": "city", "message": "Grid graph is available in SIM dataset only."}
+        db = safe_get_db_mode(mode)
         if db is None:
             return {"nodes": [], "edges": [], "error": "MongoDB connection failed"}
         edges = list(db.grid_edges.find({}, {"_id": 0}))
@@ -256,21 +327,25 @@ async def get_grid_edges():
 
 
 @router.get("/alerts")
-async def get_alerts(limit: int = 50, level: Optional[str] = None):
+async def get_alerts(request: Request, limit: int = 50, level: Optional[str] = None, city_id: Optional[str] = Query(None)):
     """Get alerts with optional level filter."""
     try:
-        db = safe_get_db()
+        mode = _get_mode(request)
+        db = safe_get_db_mode(mode)
         if db is None:
             return {"alerts": [], "count": 0, "error": "MongoDB connection failed"}
         
         query = {}
         if level:
             query["level"] = level
+        if mode == "city" and city_id:
+            query["city_id"] = city_id
         
         alerts = list(db.alerts.find(query).sort("ts", -1).limit(limit))
         
         for a in alerts:
-            a["id"] = a.pop("_id")
+            oid = a.pop("_id", None)
+            a["id"] = str(oid) if oid is not None else None
             if "ts" in a:
                 a["ts"] = a["ts"].isoformat()
             if "created_at" in a:
@@ -282,10 +357,13 @@ async def get_alerts(limit: int = 50, level: Optional[str] = None):
 
 
 @router.get("/constraint-events")
-async def get_constraint_events():
+async def get_constraint_events(request: Request):
     """Get constraint events (lockdowns, advisories)."""
     try:
-        db = safe_get_db()
+        mode = _get_mode(request)
+        if mode == "city":
+            return {"events": [], "count": 0, "mode": "city", "message": "Constraint events are available in SIM dataset only."}
+        db = safe_get_db_mode(mode)
         if db is None:
             return {"events": [], "count": 0, "error": "MongoDB connection failed"}
         events = list(db.constraint_events.find().sort("start_ts", -1))
@@ -305,10 +383,13 @@ async def get_constraint_events():
 
 
 @router.get("/meter-readings/sample")
-async def get_meter_readings_sample(limit: int = 100):
+async def get_meter_readings_sample(request: Request, limit: int = 100):
     """Get sample meter readings."""
     try:
-        db = safe_get_db()
+        mode = _get_mode(request)
+        if mode == "city":
+            return {"readings": [], "count": 0, "mode": "city", "message": "Meter readings are available in SIM dataset only."}
+        db = safe_get_db_mode(mode)
         if db is None:
             return {"readings": [], "count": 0, "error": "MongoDB connection failed"}
         readings = list(db.meter_readings.find().limit(limit))
@@ -324,10 +405,13 @@ async def get_meter_readings_sample(limit: int = 100):
 
 
 @router.get("/air-climate/sample")
-async def get_air_climate_sample(limit: int = 100):
+async def get_air_climate_sample(request: Request, limit: int = 100):
     """Get sample air/climate readings."""
     try:
-        db = safe_get_db()
+        mode = _get_mode(request)
+        if mode == "city":
+            return {"readings": [], "count": 0, "mode": "city", "message": "Air/climate readings are available in SIM dataset only."}
+        db = safe_get_db_mode(mode)
         if db is None:
             return {"readings": [], "count": 0, "error": "MongoDB connection failed"}
         readings = list(db.air_climate_readings.find().limit(limit))
@@ -340,4 +424,195 @@ async def get_air_climate_sample(limit: int = 100):
         return {"readings": readings, "count": len(readings)}
     except Exception as e:
         return {"readings": [], "count": 0, "error": str(e)}
+
+
+# ==================== ADMIN CRUD ENDPOINTS ====================
+# These endpoints allow full CRUD operations on MongoDB Atlas (Simulated mode only)
+
+@router.get("/collection/{collection_name}/sample")
+async def get_collection_sample(request: Request, collection_name: str, limit: int = Query(50, ge=1, le=200)):
+    """Get sample documents from any collection (admin endpoint for Simulated mode)."""
+    mode = _get_mode(request)
+    if mode != "sim":
+        return {"error": "Collection browsing is only available in Simulated mode", "documents": []}
+    
+    db = safe_get_db_mode("sim")
+    if db is None:
+        return {"error": "MongoDB connection failed", "documents": []}
+    
+    try:
+        # Validate collection name to prevent injection
+        allowed_collections = [
+            "zones", "households", "policies", "grid_edges",
+            "meter_readings", "air_climate_readings", "constraint_events", 
+            "alerts", "mongodb_queries"
+        ]
+        if collection_name not in allowed_collections:
+            return {"error": f"Collection '{collection_name}' not allowed", "documents": []}
+        
+        coll = db[collection_name]
+        # Sort by _id descending (newest first) - ObjectIds contain timestamp
+        # For time-series collections, also try sorting by 'ts' field
+        try:
+            if collection_name in ["meter_readings", "air_climate_readings", "alerts", "constraint_events"]:
+                documents = list(coll.find().sort("ts", -1).limit(limit))
+            elif collection_name == "mongodb_queries":
+                documents = list(coll.find().sort("id", -1).limit(limit))
+            else:
+                documents = list(coll.find().sort("_id", -1).limit(limit))
+        except Exception:
+            # Fallback if sort fails
+            documents = list(coll.find().limit(limit))
+        
+        # Convert ObjectId and datetime to strings
+        for doc in documents:
+            for key, value in list(doc.items()):
+                if key == "_id":
+                    doc["_id"] = str(value) if hasattr(value, '__str__') else value
+                elif isinstance(value, datetime):
+                    doc[key] = value.isoformat()
+        
+        return {"documents": documents, "count": len(documents), "collection": collection_name}
+    except Exception as e:
+        return {"error": str(e), "documents": []}
+
+
+@router.post("/collection/{collection_name}/create")
+async def create_document(request: Request, collection_name: str):
+    """Create a new document in a collection (admin endpoint for Simulated mode)."""
+    mode = _get_mode(request)
+    if mode != "sim":
+        return {"error": "Document creation is only available in Simulated mode"}
+    
+    db = safe_get_db_mode("sim")
+    if db is None:
+        return {"error": "MongoDB connection failed"}
+    
+    try:
+        body = await request.json()
+        
+        # Validate collection name
+        allowed_collections = [
+            "zones", "households", "policies", "grid_edges",
+            "meter_readings", "air_climate_readings", "constraint_events", 
+            "alerts", "mongodb_queries"
+        ]
+        if collection_name not in allowed_collections:
+            return {"error": f"Collection '{collection_name}' not allowed"}
+        
+        coll = db[collection_name]
+        
+        # Remove _id if provided (let MongoDB generate it)
+        body.pop("_id", None)
+        
+        result = coll.insert_one(body)
+        
+        return {
+            "success": True, 
+            "inserted_id": str(result.inserted_id),
+            "message": f"Document created in {collection_name}"
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.put("/collection/{collection_name}/update/{doc_id}")
+async def update_document(request: Request, collection_name: str, doc_id: str):
+    """Update a document in a collection (admin endpoint for Simulated mode)."""
+    mode = _get_mode(request)
+    if mode != "sim":
+        return {"error": "Document updates are only available in Simulated mode"}
+    
+    db = safe_get_db_mode("sim")
+    if db is None:
+        return {"error": "MongoDB connection failed"}
+    
+    try:
+        body = await request.json()
+        
+        # Validate collection name
+        allowed_collections = [
+            "zones", "households", "policies", "grid_edges",
+            "meter_readings", "air_climate_readings", "constraint_events", 
+            "alerts", "mongodb_queries"
+        ]
+        if collection_name not in allowed_collections:
+            return {"error": f"Collection '{collection_name}' not allowed"}
+        
+        coll = db[collection_name]
+        
+        # Remove _id from update body
+        body.pop("_id", None)
+        
+        # Try to find by _id (could be string or ObjectId)
+        from bson import ObjectId
+        query = {"_id": doc_id}
+        
+        # Try ObjectId if it looks like one
+        if len(doc_id) == 24:
+            try:
+                query = {"_id": ObjectId(doc_id)}
+            except:
+                pass
+        
+        result = coll.update_one(query, {"$set": body})
+        
+        if result.matched_count == 0:
+            return {"error": f"Document {doc_id} not found in {collection_name}"}
+        
+        return {
+            "success": True,
+            "modified_count": result.modified_count,
+            "message": f"Document updated in {collection_name}"
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.delete("/collection/{collection_name}/delete/{doc_id}")
+async def delete_document(request: Request, collection_name: str, doc_id: str):
+    """Delete a document from a collection (admin endpoint for Simulated mode)."""
+    mode = _get_mode(request)
+    if mode != "sim":
+        return {"error": "Document deletion is only available in Simulated mode"}
+    
+    db = safe_get_db_mode("sim")
+    if db is None:
+        return {"error": "MongoDB connection failed"}
+    
+    try:
+        # Validate collection name
+        allowed_collections = [
+            "zones", "households", "policies", "grid_edges",
+            "meter_readings", "air_climate_readings", "constraint_events", 
+            "alerts", "mongodb_queries"
+        ]
+        if collection_name not in allowed_collections:
+            return {"error": f"Collection '{collection_name}' not allowed"}
+        
+        coll = db[collection_name]
+        
+        # Try to find by _id (could be string or ObjectId)
+        from bson import ObjectId
+        query = {"_id": doc_id}
+        
+        # Try ObjectId if it looks like one
+        if len(doc_id) == 24:
+            try:
+                query = {"_id": ObjectId(doc_id)}
+            except:
+                pass
+        
+        result = coll.delete_one(query)
+        
+        if result.deleted_count == 0:
+            return {"error": f"Document {doc_id} not found in {collection_name}"}
+        
+        return {
+            "success": True,
+            "deleted_count": result.deleted_count,
+            "message": f"Document deleted from {collection_name}"
+        }
+    except Exception as e:
+        return {"error": str(e)}
 

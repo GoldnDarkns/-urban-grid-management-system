@@ -3,10 +3,10 @@ import { motion } from 'framer-motion';
 import { 
   BookOpen, Database, BarChart3, Brain, Activity, Network, 
   AlertTriangle, Zap, Map, GitCompare, Eye, FileText, 
-  ArrowRight, CheckCircle, Info, TrendingUp, Target,
+  ArrowRight, CheckCircle, Info, TrendingUp, Target, DollarSign,
   Server, Layers, Code, BarChart, LineChart, ClipboardList, Box
 } from 'lucide-react';
-import { dataAPI, analyticsAPI, modelsAPI } from '../services/api';
+import { dataAPI, analyticsAPI, modelsAPI, cityAPI } from '../services/api';
 import { useAppMode } from '../utils/useAppMode';
 import StatCard from '../components/StatCard';
 
@@ -15,14 +15,44 @@ export default function Guide() {
   const [loading, setLoading] = useState(true);
   const [dbStats, setDbStats] = useState(null);
   const [activeSection, setActiveSection] = useState('overview');
+  const [currentCityId, setCurrentCityId] = useState(null);
+  const [flowView, setFlowView] = useState('city'); // 'city' | 'sim' for Data Flow tab (independent of app mode)
+
+  useEffect(() => {
+    if (mode === 'city') {
+      cityAPI.getCurrentCity().then((r) => setCurrentCityId(r.data?.city_id || null)).catch(() => setCurrentCityId(null));
+    } else {
+      setCurrentCityId(null);
+    }
+    setFlowView(mode); // Keep flow tab in sync with app mode when mode changes
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== 'city') return;
+    const onCityChanged = () => {
+      cityAPI.getCurrentCity().then((r) => setCurrentCityId(r.data?.city_id || null)).catch(() => setCurrentCityId(null));
+    };
+    window.addEventListener('ugms-city-changed', onCityChanged);
+    window.addEventListener('ugms-city-processed', onCityChanged);
+    return () => {
+      window.removeEventListener('ugms-city-changed', onCityChanged);
+      window.removeEventListener('ugms-city-processed', onCityChanged);
+    };
+  }, [mode]);
 
   useEffect(() => {
     fetchStats();
-  }, [mode]);
+  }, [mode, currentCityId]);
+
+  // Refetch stats when user switches to overview so data is always fresh (fixes "empty until I go back and forth")
+  useEffect(() => {
+    if (activeSection === 'overview') fetchStats();
+  }, [activeSection]); // eslint-disable-line react-hooks/exhaustive-deps -- fetchStats stable, intentional refetch on section change
 
   const fetchStats = async () => {
     try {
-      const status = await dataAPI.getStatus(mode === 'city' ? null : null);
+      const cityId = mode === 'city' ? currentCityId : null;
+      const status = await dataAPI.getStatus(cityId);
       setDbStats(status.data);
     } catch (error) {
       console.error('Error fetching stats:', error);
@@ -72,8 +102,8 @@ export default function Guide() {
       description: mode === 'city' ? 'City Data Explorer - view live processed data, weather, AQI, traffic records' : 'MongoDB data explorer - view all collections, zones, alerts, and grid structure',
       purpose: mode === 'city' ? 'Inspect live processed data from selected city stored in local MongoDB' : 'Inspect raw data stored in MongoDB Atlas',
       dataSource: mode === 'city' ? 'processed_zone_data, weather_data, aqi_data, traffic_data (from CITY DB)' : 'Direct MongoDB queries (zones, households, alerts, grid_edges collections from SIM DB)',
-      output: mode === 'city' ? '20 zones processed, weather/AQI/traffic records, collection indexes' : 'Collection counts, zone details, alert history, grid connectivity graph',
-      features: mode === 'city' ? ['Processed zone data (20 zones)', 'Weather/AQI/Traffic records', 'Collection indexes', 'City-specific data'] : ['Collection overview with counts', 'Zone details table', 'Alerts timeline', 'Grid adjacency visualization']
+      output: mode === 'city' ? 'Zones processed (varies by city), weather/AQI/traffic records, collection indexes' : 'Collection counts, zone details, alert history, grid connectivity graph',
+      features: mode === 'city' ? ['Processed zone data (zones vary by city)', 'Weather/AQI/Traffic records', 'Collection indexes', 'City-specific data'] : ['Collection overview with counts', 'Zone details table', 'Alerts timeline', 'Grid adjacency visualization']
     },
     {
       id: 'analytics',
@@ -93,8 +123,8 @@ export default function Guide() {
       path: '/advanced-analytics',
       icon: Brain,
       order: 5,
-      description: mode === 'city' ? 'Live ML outputs from real-time processing - LSTM forecasts, Autoencoder anomalies, GNN risk scores' : 'Deep dive into ML models, MongoDB queries, and technical details',
-      purpose: mode === 'city' ? 'View live ML model outputs processing real city data' : 'Explore all 5 ML models (LSTM, Autoencoder, GNN, ARIMA, Prophet) and execute 10 MongoDB queries',
+      description: mode === 'city' ? 'Live ML outputs from real-time processing — TFT forecasts, Autoencoder anomalies, GNN risk scores' : 'Deep dive into ML models, MongoDB queries, and technical details',
+      purpose: mode === 'city' ? 'View live ML model outputs processing real city data' : 'Explore TFT (primary), LSTM (comparison), Autoencoder, GNN, ARIMA, Prophet and execute 10 MongoDB queries',
       dataSource: mode === 'city' ? 'processed_zone_data.ml_processed (live outputs per zone)' : 'ML model outputs, MongoDB query results',
       output: mode === 'city' ? 'Live ML outputs, aggregated stats, real-time processing status' : 'Model architectures, training metrics, query results, model comparisons',
       features: mode === 'city' ? ['Live ML Outputs', 'Per-Zone Stats', 'Real-time Processing', 'City-Specific Results'] : ['ML Model Details', 'MongoDB Queries (10 queries)', 'Model Comparison', 'Technical Deep-dive']
@@ -183,6 +213,19 @@ export default function Guide() {
       dataSource: 'Aggregated data from all MongoDB collections',
       output: 'PDF/CSV reports with charts, metrics, recommendations',
       features: ['Demand reports', 'AQI reports', 'Alert summaries', 'Zone performance reports', 'Model performance reports']
+    },
+    {
+      id: 'cost',
+      name: 'Cost',
+      path: '/cost',
+      icon: DollarSign,
+      order: 13,
+      description: mode === 'city' ? 'Energy, CO₂, AQI, and 311 incident cost estimates for the selected city' : 'City Live only',
+      purpose: 'View cost breakdown: forecast energy cost, carbon cost, AQI externality proxy, 311 incident cost',
+      dataSource: mode === 'city' ? 'processed_zone_data, EIA retail price, cost_config, City 311 API' : 'N/A',
+      output: 'Total estimated cost; Energy, CO₂, AQI, Incident cards with explanations',
+      features: mode === 'city' ? ['Forecast energy cost', 'CO₂ cost', 'AQI cost (est.)', '311 incident cost (est.)', 'Configurable rates'] : ['Available in City Live mode only'],
+      note: mode !== 'city' ? 'Switch to City Live and select a city to view costs.' : ''
     }
   ];
 
@@ -190,8 +233,8 @@ export default function Guide() {
     {
       step: 1,
       name: 'City Selection',
-      description: 'User selects a city from dropdown (navbar → Active City). System configures 20 zones with real coordinates for that city.',
-      data: 'NYC, Chicago, LA, SF, Houston, Phoenix → 20 zones per city',
+      description: 'User selects a city from dropdown (navbar → Active City). System configures zones with real coordinates (count varies by city: e.g. NYC 40, SF 12).',
+      data: 'NYC, Chicago, LA, SF, Houston, Phoenix → zones per city (e.g. 40, 25, 35, 12, 25, 20)',
       icon: Map
     },
     {
@@ -204,8 +247,8 @@ export default function Guide() {
     {
       step: 3,
       name: 'ML Processing',
-      description: 'For each zone: LSTM forecasts demand, Autoencoder detects anomalies, GNN scores risk. All use live API data.',
-      data: 'LSTM, Autoencoder, GNN, ARIMA, Prophet → Processed per zone',
+      description: 'For each zone: TFT (primary) forecasts demand, Autoencoder detects anomalies, GNN scores risk. LSTM kept for comparison. All use live API data.',
+      data: 'TFT, LSTM (comparison), Autoencoder, GNN, ARIMA, Prophet → Processed per zone',
       icon: Brain
     },
     {
@@ -254,7 +297,7 @@ export default function Guide() {
     {
       step: 3,
       name: 'ML Model Inference',
-      description: '5 models (LSTM, Autoencoder, GNN, ARIMA, Prophet) use historical training data',
+      description: 'TFT (primary), LSTM (comparison), Autoencoder, GNN, ARIMA, Prophet use historical training data',
       data: 'Demand forecasts, anomaly scores, risk classifications, 10 MongoDB queries',
       icon: Brain
     },
@@ -337,20 +380,31 @@ export default function Guide() {
               </div>
             </div>
 
+            {mode === 'city' && !currentCityId && (
+              <p className="guide-hint" style={{ marginBottom: '1rem', color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
+                Select a city from the navbar (Active City) to see city-specific stats.
+              </p>
+            )}
             <div className="stats-grid">
               {mode === 'city' ? (
                 <>
                   <StatCard
-                    value={collections.processed_zone_data?.count || 0}
-                    label="Zones Processed"
+                    value={collections.processed_zone_data?.distinct_zones ?? collections.processed_zone_data?.count ?? 0}
+                    label="Zones (this city)"
                     icon={Map}
                     color="primary"
+                  />
+                  <StatCard
+                    value={collections.processed_zone_data?.count || 0}
+                    label="Processed Records"
+                    icon={Activity}
+                    color="secondary"
                   />
                   <StatCard
                     value={collections.weather_data?.count || 0}
                     label="Weather Records"
                     icon={Database}
-                    color="secondary"
+                    color="warning"
                   />
                   <StatCard
                     value={collections.aqi_data?.count || 0}
@@ -400,23 +454,27 @@ export default function Guide() {
               <div className="info-card">
                 <h3><Database size={20} /> Data Sources</h3>
                 <p><strong>Dual Database System:</strong></p>
+                <p style={{ marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--accent-primary)' }}>
+                  <strong>Simulated → MongoDB Atlas.</strong> <strong>City Live → local MongoDB.</strong> This distinction is why the two modes run differently.
+                </p>
                 <ul>
-                  <li><strong>City Live Mode:</strong> Local MongoDB stores processed data from live APIs. 20 zones per city with real coordinates.</li>
-                  <li><strong>Simulated Mode:</strong> MongoDB Atlas demo dataset (500 households, 360K+ meter readings, 14K+ air/climate readings)</li>
+                  <li><strong>City Live Mode:</strong> <strong>Local MongoDB</strong> stores processed data from live APIs. Zone count per city (e.g. NYC 40, Chicago 25, SF 12) with real coordinates.</li>
+                  <li><strong>Simulated Mode:</strong> <strong>MongoDB Atlas</strong> demo dataset (500 households, 360K+ meter readings, 14K+ air/climate readings)</li>
                   <li><strong>Live APIs (City Mode):</strong> OpenWeatherMap (Weather), AirVisual (AQI), TomTom (Traffic), EIA (Energy), Census (Population), City 311 (Service Requests), OpenStreetMap (Infrastructure)</li>
-                  <li><strong>Processing:</strong> BackgroundProcessor runs every 5 minutes, fetches APIs, runs ML models, stores in local MongoDB</li>
+                  <li><strong>Fallback datasets:</strong> When APIs fail or hit rate limits, the system uses local data: US_City_Temp_Data (weather), Kaggle AQI CSV, traffic_speed CSV, EIA xls/xlsx (electricity & CO₂)</li>
+                  <li><strong>Processing:</strong> BackgroundProcessor runs every 5 minutes; zones processed in parallel. Data also streamed via Kafka to MongoDB</li>
                 </ul>
               </div>
 
               <div className="info-card">
                 <h3><Brain size={20} /> ML Models</h3>
-                <p><strong>5 Models Processing Live Data:</strong></p>
+                <p><strong>Demand &amp; Risk: TFT Primary, LSTM Comparison</strong></p>
                 <ul>
-                  <li><strong>LSTM:</strong> Demand forecasting from live city data (enhanced with weather)</li>
+                  <li><strong>TFT (Temporal Fusion Transformer):</strong> Primary demand forecasting — interpretable multi-horizon, variable selection, compatible with our mixed inputs (static zone, known future, historical series)</li>
+                  <li><strong>LSTM (comparison):</strong> Baseline demand forecast kept to showcase TFT advantages (interpretability, multi-horizon, accuracy)</li>
                   <li><strong>Autoencoder:</strong> Real-time anomaly detection on processed zone data</li>
                   <li><strong>GNN:</strong> Live risk scoring combining AQI, traffic, and demand patterns</li>
-                  <li><strong>ARIMA:</strong> Statistical forecasting for time-series patterns</li>
-                  <li><strong>Prophet:</strong> Seasonal forecasting with trend analysis</li>
+                  <li><strong>ARIMA / Prophet:</strong> Statistical and seasonal forecasting</li>
                 </ul>
                 <p style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                   <strong>In City Live:</strong> Models process data every 5 minutes. Results stored in <code>processed_zone_data</code> collection.
@@ -428,14 +486,25 @@ export default function Guide() {
 
               <div className="info-card">
                 <h3><Zap size={20} /> Key Features</h3>
+                <p style={{ marginBottom: '0.5rem', fontSize: '0.9rem', color: 'var(--accent-primary)' }}>
+                  <strong>City Live page flow (order that makes sense):</strong>
+                </p>
+                <ol style={{ marginLeft: '1.25rem', marginBottom: '0.75rem', fontSize: '0.9rem' }}>
+                  <li><strong>Home</strong> → Select city, run processing (zones + live APIs + ML)</li>
+                  <li><strong>Data</strong> → View processed zone data, weather, AQI, traffic</li>
+                  <li><strong>Analytics</strong> → Demand/AQI/anomaly charts</li>
+                  <li><strong>Advanced Analytics</strong> → TFT, LSTM (comparison), Autoencoder, GNN outputs per zone</li>
+                  <li><strong>AI Recs</strong> → Prioritized recommendations from ML</li>
+                  <li><strong>Insights, Cost, City Map, etc.</strong> → Deeper dives</li>
+                </ol>
                 <ul>
                   <li><strong>Mode Switcher</strong> (navbar) → Toggle between "City Live" and "Simulated" modes</li>
                   <li><strong>City Selection</strong> (navbar → Active City) → Choose from NYC, Chicago, LA, SF, Houston, Phoenix</li>
                   <li><strong>Live API Integration:</strong> Weather, AQI, Traffic, EIA, Census, 311, Infrastructure (OpenStreetMap)</li>
-                  <li><strong>Real-Time Processing:</strong> BackgroundProcessor runs every 5 minutes, processes all zones, stores in local MongoDB</li>
+                  <li><strong>API Fallbacks:</strong> Local CSV/Excel used when APIs fail (weather, AQI, traffic, EIA electricity & CO₂)</li>
+                  <li><strong>Real-Time Processing:</strong> BackgroundProcessor runs every 5 minutes; zones processed in parallel; Kafka producer streams to MongoDB</li>
                   <li><strong>AI Recommendations:</strong> OpenRouter LLM synthesizes all ML outputs into prioritized actions</li>
                   <li><strong>Dynamic Pages:</strong> All pages adapt based on selected mode and city</li>
-                  <li><strong>Future:</strong> Kafka + Spark streaming for 40-50 second updates (coming soon)</li>
                 </ul>
               </div>
             </div>
@@ -480,26 +549,33 @@ export default function Guide() {
 
             <div className="architecture-explanation">
               <h3>How Data Flows Through the System</h3>
+              <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1rem' }}>
+                Switch tabs to see City Live flow (live APIs + local MongoDB) or Simulated flow (MongoDB Atlas demo data).
+              </p>
               <div className="mode-tabs" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
-                <button 
-                  className={mode === 'city' ? 'active' : ''}
-                  style={{ padding: '0.5rem 1rem', background: mode === 'city' ? 'var(--accent-primary)' : 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '6px', color: mode === 'city' ? '#000' : 'var(--text-secondary)', cursor: 'pointer' }}
+                <button
+                  type="button"
+                  className={flowView === 'city' ? 'active' : ''}
+                  onClick={() => setFlowView('city')}
+                  style={{ padding: '0.5rem 1rem', background: flowView === 'city' ? 'var(--accent-primary)' : 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '6px', color: flowView === 'city' ? '#000' : 'var(--text-secondary)', cursor: 'pointer' }}
                 >
                   City Live Flow
                 </button>
-                <button 
-                  className={mode === 'sim' ? 'active' : ''}
-                  style={{ padding: '0.5rem 1rem', background: mode === 'sim' ? 'var(--accent-primary)' : 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '6px', color: mode === 'sim' ? '#000' : 'var(--text-secondary)', cursor: 'pointer' }}
+                <button
+                  type="button"
+                  className={flowView === 'sim' ? 'active' : ''}
+                  onClick={() => setFlowView('sim')}
+                  style={{ padding: '0.5rem 1rem', background: flowView === 'sim' ? 'var(--accent-primary)' : 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '6px', color: flowView === 'sim' ? '#000' : 'var(--text-secondary)', cursor: 'pointer' }}
                 >
                   Simulated Flow
                 </button>
               </div>
               <div className="flow-details">
-                {mode === 'city' ? (
+                {flowView === 'city' ? (
                   <>
                     <div className="flow-item">
                       <strong>1. City Selection:</strong>
-                      <p>Select a city from <strong>Active City</strong> dropdown (navbar). System calculates 20 zone coordinates for that city and starts background processing.</p>
+                      <p>Select a city from <strong>Active City</strong> dropdown (navbar). System calculates zone coordinates for that city (e.g. NYC 40, Chicago 25, SF 12) and starts background processing.</p>
                     </div>
                     <div className="flow-item">
                       <strong>2. Live API Fetching (Every 5 Minutes):</strong>
@@ -507,7 +583,7 @@ export default function Guide() {
                     </div>
                     <div className="flow-item">
                       <strong>3. ML Processing:</strong>
-                      <p>For each zone: <strong>LSTM</strong> forecasts demand (enhanced with weather), <strong>Autoencoder</strong> detects anomalies, <strong>GNN</strong> scores risk (combines AQI + traffic + demand), <strong>ARIMA/Prophet</strong> provide statistical forecasts.</p>
+                      <p>For each zone: <strong>TFT</strong> (Temporal Fusion Transformer) is the primary demand forecaster — interpretable, multi-horizon, suited to our mix of static zone data, known future inputs, and historical series. <strong>LSTM</strong> is kept for comparison. <strong>Autoencoder</strong> detects anomalies, <strong>GNN</strong> scores risk (AQI + traffic + demand), <strong>ARIMA/Prophet</strong> provide statistical forecasts.</p>
                     </div>
                     <div className="flow-item">
                       <strong>4. Local MongoDB Storage:</strong>
@@ -542,7 +618,7 @@ export default function Guide() {
                     </div>
                     <div className="flow-item">
                       <strong>3. ML Model Inference:</strong>
-                      <p>5 models (LSTM, Autoencoder, GNN, ARIMA, Prophet) use historical training data. Results show training metrics (RMSE, R²).</p>
+                      <p>TFT (primary), LSTM (comparison), Autoencoder, GNN, ARIMA, Prophet use historical training data. Results show training metrics (RMSE, R²).</p>
                     </div>
                     <div className="flow-item">
                       <strong>4. AI Synthesis (OpenRouter):</strong>
@@ -637,9 +713,9 @@ export default function Guide() {
             <div className="outputs-grid">
               <div className="output-card">
                 <h3><Activity size={20} /> Demand Forecasts</h3>
-                <p><strong>Source:</strong> LSTM, ARIMA, Prophet models</p>
-                <p><strong>Output:</strong> Next hour energy demand prediction</p>
-                <p><strong>Accuracy:</strong> LSTM (RMSE: 64.27), Prophet (RMSE: 48.41 - best)</p>
+                <p><strong>Source:</strong> TFT (primary), LSTM (comparison), ARIMA, Prophet models</p>
+                <p><strong>Output:</strong> Next hour (and multi-horizon) energy demand prediction</p>
+                <p><strong>Accuracy:</strong> TFT primary; LSTM comparison (RMSE: 64.27), Prophet (RMSE: 48.41)</p>
                 <p><strong>Use Case:</strong> Plan energy generation, prevent overloads</p>
               </div>
 
@@ -655,7 +731,7 @@ export default function Guide() {
                 <h3><Network size={20} /> Risk Scores</h3>
                 <p><strong>Source:</strong> GNN model + rule-based calculation</p>
                 <p><strong>Output:</strong> Zone risk levels (Low/Medium/High)</p>
-                <p><strong>Current Status:</strong> {collections.zones?.count || 0} zones, all currently Low Risk</p>
+                <p><strong>Current Status:</strong> {mode === 'city' ? (collections.processed_zone_data?.distinct_zones ?? collections.processed_zone_data?.count ?? 0) : (collections.zones?.count || 0)} zones</p>
                 <p><strong>Use Case:</strong> Prioritize maintenance, allocate resources</p>
               </div>
 
@@ -663,7 +739,10 @@ export default function Guide() {
                 <h3><BarChart3 size={20} /> Analytics</h3>
                 <p><strong>Source:</strong> MongoDB aggregations</p>
                 <p><strong>Output:</strong> Demand trends, AQI analysis, correlations</p>
-                <p><strong>Data Points:</strong> {Math.round((collections.meter_readings?.count || 0) / 1000)}K readings analyzed</p>
+                <p><strong>Data Points:</strong> {mode === 'city'
+                  ? `${(collections.processed_zone_data?.count || 0) + (collections.weather_data?.count || 0) + (collections.aqi_data?.count || 0) + (collections.traffic_data?.count || 0)} records analyzed`
+                  : `${Math.round((collections.meter_readings?.count || 0) / 1000)}K readings analyzed`}
+                </p>
                 <p><strong>Use Case:</strong> Understand patterns, make data-driven decisions</p>
               </div>
 
@@ -696,15 +775,18 @@ export default function Guide() {
               <h3>Real-Time Outputs from Your Database</h3>
               <div className="output-stats">
                 <div className="output-stat">
-                  <span className="stat-value">{collections.zones?.count || 0}</span>
+                  <span className="stat-value">{mode === 'city' ? (collections.processed_zone_data?.distinct_zones ?? collections.processed_zone_data?.count ?? 0) : (collections.zones?.count || 0)}</span>
                   <span className="stat-label">Zones Monitored</span>
                 </div>
                 <div className="output-stat">
-                  <span className="stat-value">{Math.round((collections.meter_readings?.count || 0) / 1000)}K</span>
+                  <span className="stat-value">{mode === 'city'
+                    ? (collections.processed_zone_data?.count || 0) + (collections.weather_data?.count || 0) + (collections.aqi_data?.count || 0) + (collections.traffic_data?.count || 0)
+                    : `${Math.round((collections.meter_readings?.count || 0) / 1000)}K`}
+                  </span>
                   <span className="stat-label">Data Points Analyzed</span>
                 </div>
                 <div className="output-stat">
-                  <span className="stat-value">{collections.alerts?.count || 0}</span>
+                  <span className="stat-value">{collections.alerts?.count ?? 0}</span>
                   <span className="stat-label">Alerts Generated</span>
                 </div>
                 <div className="output-stat">

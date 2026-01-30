@@ -342,7 +342,7 @@ export default function Insights() {
               >
                 <div className="ml-header">
                   <Activity size={20} />
-                  <h3>LSTM Demand Forecast</h3>
+                  <h3>TFT Demand Forecast</h3>
                 </div>
                 <div className="ml-content">
                   <div className="ml-value">

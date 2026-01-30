@@ -1,38 +1,35 @@
-import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { motion } from 'framer-motion';
 import { 
-  CheckCircle2, Loader2, X, MapPin, Globe, Cloud, Wind, 
-  Activity, Brain, Zap, Database, AlertCircle, Minimize2, Maximize2
+  CheckCircle2, Loader2, X, MapPin, Globe, Activity, Zap, Database, 
+  AlertCircle, Minimize2, Maximize2
 } from 'lucide-react';
 
 const PROCESSING_STEPS = [
   { id: 'selecting', label: 'Selecting City', icon: MapPin, description: 'Initializing city configuration' },
-  { id: 'zones', label: 'Calculating Zones', icon: Globe, description: 'Dividing city into 20 zones' },
-  { id: 'geocoding', label: 'Reverse Geocoding', icon: MapPin, description: 'Fetching real neighborhood names (this may take 20-25 seconds)' },
-  { id: 'weather', label: 'Fetching Weather Data', icon: Cloud, description: 'Getting current weather from OpenWeatherMap' },
-  { id: 'aqi', label: 'Fetching AQI Data', icon: Wind, description: 'Getting air quality from AirVisual API' },
-  { id: 'traffic', label: 'Fetching Traffic Data', icon: Activity, description: 'Getting traffic patterns from TomTom' },
-  { id: 'lstm', label: 'LSTM Forecasting', icon: Brain, description: 'Running demand prediction model' },
-  { id: 'autoencoder', label: 'Anomaly Detection', icon: AlertCircle, description: 'Detecting unusual patterns' },
-  { id: 'gnn', label: 'GNN Risk Scoring', icon: Brain, description: 'Calculating zone risk scores' },
-  { id: 'arima', label: 'ARIMA Analysis', icon: Activity, description: 'Statistical forecasting' },
-  { id: 'prophet', label: 'Prophet Forecasting', icon: Zap, description: 'Seasonal trend analysis' },
-  { id: 'recommendations', label: 'AI Recommendations', icon: Brain, description: 'Generating prioritized recommendations' },
+  { id: 'zones', label: 'Calculating Zones', icon: Globe, description: 'Dividing city into zones (count varies by city)' },
+  { id: 'processing', label: 'Processing All Zones', icon: Activity, description: 'Fetching Weather, AQI, Traffic & running ML (TFT, Autoencoder, GNN) per zone' },
+  { id: 'kafka', label: 'Kafka Live Feed', icon: Zap, description: 'Verifying Kafka pipeline availability' },
   { id: 'eia', label: 'Energy Grid Data', icon: Database, description: 'Processing EIA electricity data' },
-  { id: 'complete', label: 'Complete!', icon: CheckCircle2, description: 'All processing finished' }
+  { id: 'complete', label: 'Complete!', icon: CheckCircle2, description: 'All processing finished – tabs will show data immediately' },
 ];
+
+const TOTAL_TASKS = PROCESSING_STEPS.length;
 
 export default function CityProcessingModal({ isOpen, onClose, cityName, progress }) {
   const [currentStep, setCurrentStep] = useState(0);
   const [completedSteps, setCompletedSteps] = useState(new Set());
   const [failedSteps, setFailedSteps] = useState(new Set());
   const [isMinimized, setIsMinimized] = useState(false);
+  const dialogRef = useRef(null);
 
   useEffect(() => {
     if (!isOpen) {
       setCurrentStep(0);
       setCompletedSteps(new Set());
       setFailedSteps(new Set());
+      if (dialogRef.current?.open) dialogRef.current.close();
       return;
     }
 
@@ -40,77 +37,93 @@ export default function CityProcessingModal({ isOpen, onClose, cityName, progres
     if (progress) {
       const { stage, message, error } = progress;
       
-      // Map progress stages to step indices
       const stageMap = {
         'selecting': 0,
         'zones': 1,
-        'geocoding': 2,
-        'weather': 3,
-        'aqi': 4,
-        'traffic': 5,
-        'lstm': 6,
-        'autoencoder': 7,
-        'gnn': 8,
-        'arima': 9,
-        'prophet': 10,
-        'recommendations': 11,
-        'eia': 12,
-        'complete': 13,
-        'error': -1
+        'processing': 2,
+        'kafka': 3,
+        'eia': 4,
+        'complete': 5,
+        'error': -1,
       };
 
       const stepIndex = stageMap[stage] ?? -1;
       
       if (stepIndex >= 0) {
         setCurrentStep(stepIndex);
-        
-        // Mark previous steps as completed
+        // Mark all steps before current as completed
+        const newCompleted = new Set();
         for (let i = 0; i < stepIndex; i++) {
-          setCompletedSteps(prev => new Set([...prev, i]));
+          newCompleted.add(i);
         }
+        // If current step is complete (not in progress), mark it as completed too
+        if (stage === 'complete') {
+          // All steps are completed
+          for (let i = 0; i < TOTAL_TASKS; i++) {
+            newCompleted.add(i);
+          }
+        } else if (stepIndex > 0) {
+          // Current step is in progress, so only previous steps are completed
+          // Don't add current step to completed
+        }
+        setCompletedSteps(newCompleted);
         
         if (error) {
           setFailedSteps(prev => new Set([...prev, stepIndex]));
-        } else if (stage === 'complete') {
-          // Mark all steps as completed
-          setCompletedSteps(new Set(Array.from({ length: PROCESSING_STEPS.length }, (_, i) => i)));
+        } else {
+          setFailedSteps(new Set());
         }
       }
     }
   }, [isOpen, progress]);
 
+  useEffect(() => {
+    const d = dialogRef.current;
+    if (!d) return;
+    if (isOpen) {
+      if (!d.open) d.showModal();
+    } else {
+      if (d.open) d.close();
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (dialogRef.current?.open) dialogRef.current.close();
+    };
+  }, []);
+
   if (!isOpen) return null;
 
-  return (
-    <AnimatePresence>
-      <motion.div
+  const modalContent = (
+    <dialog
+      ref={dialogRef}
+      className="city-processing-dialog"
+      onCancel={(e) => { e.preventDefault(); onClose(); }}
+      aria-modal="true"
+      aria-labelledby="city-processing-title"
+    >
+      <div
         className="city-processing-overlay"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
         onClick={isMinimized ? undefined : onClose}
+        role="presentation"
       >
-          <motion.div
+        <motion.div
           className={`city-processing-modal ${isMinimized ? 'minimized' : ''}`}
           initial={{ scale: 0.9, opacity: 0, y: 20 }}
-          animate={{ 
-            scale: isMinimized ? 0.85 : 1, 
-            opacity: 1, 
-            y: 0
-          }}
-          exit={{ scale: 0.9, opacity: 0, y: 20 }}
+          animate={{ scale: isMinimized ? 0.85 : 1, opacity: 1, y: 0 }}
           transition={{ type: 'spring', damping: 25, stiffness: 300 }}
           onClick={(e) => e.stopPropagation()}
         >
           <div className="modal-header">
             <div className="modal-title-section">
-              <h2>Processing {cityName || 'City'}</h2>
+              <h2 id="city-processing-title">Processing {cityName || 'City'}</h2>
               {!isMinimized && (
                 <p className="modal-subtitle">Setting up zones and fetching live data...</p>
               )}
               {isMinimized && (
                 <p className="modal-subtitle-minimized">
-                  {completedSteps.size} of {PROCESSING_STEPS.length} tasks completed
+                  {completedSteps.size} of {TOTAL_TASKS} steps completed
                 </p>
               )}
             </div>
@@ -161,12 +174,15 @@ export default function CityProcessingModal({ isOpen, onClose, cityName, progres
                   >
                     <div className="step-indicator">
                       {iconElement}
-                      {index < PROCESSING_STEPS.length - 1 && (
+                        {index < TOTAL_TASKS - 1 && (
                         <div className={`step-connector ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''}`} />
                       )}
                     </div>
                     <div className="step-content">
-                      <div className="step-label">{step.label}</div>
+                      <div className="step-label">
+                        <span className="step-number" aria-hidden="true">Step {index + 1} of {TOTAL_TASKS}</span>
+                        <span>{step.label}</span>
+                      </div>
                       <div className="step-description">{step.description}</div>
                       {isActive && progress?.message && (
                         <motion.div
@@ -202,13 +218,13 @@ export default function CityProcessingModal({ isOpen, onClose, cityName, progres
                     className="progress-bar-fill"
                     initial={{ width: '0%' }}
                     animate={{ 
-                      width: `${((completedSteps.size + (currentStep < PROCESSING_STEPS.length - 1 ? 0.5 : 0)) / PROCESSING_STEPS.length) * 100}%` 
+                      width: `${((completedSteps.size + (currentStep < TOTAL_TASKS - 1 ? 0.5 : 0)) / TOTAL_TASKS) * 100}%` 
                     }}
                     transition={{ duration: 0.3 }}
                   />
                 </div>
                 <div className="progress-text">
-                  {completedSteps.size} of {PROCESSING_STEPS.length} tasks completed
+                  {completedSteps.size} of {TOTAL_TASKS} steps completed
                 </div>
               </div>
             </div>
@@ -221,27 +237,40 @@ export default function CityProcessingModal({ isOpen, onClose, cityName, progres
                   className="minimized-progress-fill"
                   initial={{ width: '0%' }}
                   animate={{ 
-                    width: `${((completedSteps.size + (currentStep < PROCESSING_STEPS.length - 1 ? 0.5 : 0)) / PROCESSING_STEPS.length) * 100}%` 
+                    width: `${((completedSteps.size + (currentStep < TOTAL_TASKS - 1 ? 0.5 : 0)) / TOTAL_TASKS) * 100}%` 
                   }}
                   transition={{ duration: 0.3 }}
                 />
               </div>
               <div className="minimized-status">
-                {PROCESSING_STEPS[currentStep]?.label || 'Processing...'}
+                {PROCESSING_STEPS[currentStep]?.label || 'Processing...'} ({currentStep + 1}/{TOTAL_TASKS})
               </div>
             </div>
           )}
 
           <style>{`
-          .city-processing-overlay {
+          .city-processing-dialog {
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
+            inset: 0;
+            margin: 0;
+            padding: 0;
+            border: none;
+            width: 100vw;
+            height: 100vh;
+            max-width: 100vw;
+            max-height: 100vh;
+            background: transparent;
+            z-index: 2147483647;
+          }
+
+          .city-processing-dialog::backdrop {
             background: rgba(0, 0, 0, 0.85);
             backdrop-filter: blur(10px);
-            z-index: 10000;
+          }
+
+          .city-processing-overlay {
+            position: absolute;
+            inset: 0;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -274,7 +303,6 @@ export default function CityProcessingModal({ isOpen, onClose, cityName, progres
             position: fixed;
             top: 20px;
             right: 20px;
-            z-index: 10001;
             margin: 0;
           }
 
@@ -467,11 +495,21 @@ export default function CityProcessingModal({ isOpen, onClose, cityName, progres
           }
 
           .step-label {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
             font-size: 1.1rem;
             font-weight: 700;
             color: #ffffff;
             margin-bottom: 6px;
             text-shadow: 0 0 5px rgba(0, 255, 136, 0.3);
+          }
+
+          .step-number {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.7);
+            text-shadow: none;
           }
 
           .step-description {
@@ -561,7 +599,9 @@ export default function CityProcessingModal({ isOpen, onClose, cityName, progres
           }
         `}</style>
         </motion.div>
-      </motion.div>
-    </AnimatePresence>
+      </div>
+    </dialog>
   );
+
+  return createPortal(modalContent, document.body);
 }

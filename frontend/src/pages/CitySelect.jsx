@@ -7,9 +7,19 @@ import {
 } from 'lucide-react';
 import { cityAPI } from '../services/api';
 
+/** Fallback when /api/city/list fails (e.g. 504). Matches backend CityConfig. */
+const FALLBACK_CITIES = [
+  { id: 'nyc', name: 'New York City', state: 'NY', country: 'USA', population: 8336817 },
+  { id: 'chicago', name: 'Chicago', state: 'IL', country: 'USA', population: 2693976 },
+  { id: 'la', name: 'Los Angeles', state: 'CA', country: 'USA', population: 3898747 },
+  { id: 'sf', name: 'San Francisco', state: 'CA', country: 'USA', population: 873965 },
+  { id: 'houston', name: 'Houston', state: 'TX', country: 'USA', population: 2320268 },
+  { id: 'phoenix', name: 'Phoenix', state: 'AZ', country: 'USA', population: 1680992 },
+];
+
 const STEP_LABELS = {
   selecting: 'Selecting city and configuring 20 zones...',
-  processing: 'Fetching live APIs & running ML models (LSTM, Autoencoder, GNN, ARIMA, Prophet)...',
+  processing: 'Fetching live APIs & running ML models (TFT, Autoencoder, GNN, ARIMA, Prophet)...',
   eia: 'Processing EIA energy data...',
   complete: 'Processing complete',
 };
@@ -30,8 +40,10 @@ export default function CitySelect() {
       try {
         const res = await cityAPI.listCities();
         setCities(res.data.cities || []);
+        setError(null);
       } catch (e) {
-        setError('Could not load cities');
+        setError(e.response?.status === 504 ? 'Backend took too long (504). Using fallback list — try selecting a city.' : 'Could not load cities');
+        setCities(FALLBACK_CITIES);
       } finally {
         setLoading(false);
       }
@@ -115,7 +127,7 @@ export default function CitySelect() {
           <h1>Urban Grid Management</h1>
           <p className="subtitle">
             Choose a city first. We will fetch live data (Weather, AQI, Traffic, EIA, Census),
-            run all ML models (LSTM, Autoencoder, GNN, ARIMA, Prophet), and then the full dashboard
+            run TFT (primary), Autoencoder, GNN, ARIMA, Prophet, and then the full dashboard
             will show analysis for that city.
           </p>
         </motion.div>
@@ -197,7 +209,7 @@ export default function CitySelect() {
                 </div>
                 <div className="ps-row">
                   <Brain size={20} />
-                  <span>ML: <strong>LSTM</strong> demand forecast, <strong>Autoencoder</strong> anomalies, <strong>GNN</strong> risk, <strong>ARIMA</strong> & <strong>Prophet</strong> forecasts</span>
+                  <span>ML: <strong>TFT</strong> demand forecast (LSTM comparison), <strong>Autoencoder</strong> anomalies, <strong>GNN</strong> risk, <strong>ARIMA</strong> & <strong>Prophet</strong> forecasts</span>
                 </div>
                 <div className="ps-row">
                   <BarChart3 size={20} />

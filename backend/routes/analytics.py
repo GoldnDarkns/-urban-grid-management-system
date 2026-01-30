@@ -1,16 +1,18 @@
 """
 Analytics API routes - Data analysis and aggregation endpoints.
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 import sys
 import os
+from dateutil import parser
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from src.db.mongo_client import get_db
+from src.db.mongo_client import get_db, get_city_db
 from pymongo.errors import ConnectionFailure
+from fastapi import Query
 
 router = APIRouter()
 
@@ -23,14 +25,74 @@ def safe_get_db():
         return None
 
 
+def _get_db_for_city(city_id: Optional[str] = None):
+    """Get appropriate DB: city DB if city_id provided, else sim DB."""
+    if city_id:
+        try:
+            return get_city_db()
+        except Exception:
+            return None
+    return safe_get_db()
+
+
 @router.get("/demand/hourly")
-async def get_hourly_demand(zone_id: Optional[str] = None, hours: int = 168):
-    """Get hourly demand aggregation (default: last 7 days)."""
+async def get_hourly_demand(zone_id: Optional[str] = None, hours: int = 168, city_id: Optional[str] = Query(None)):
+    """Get hourly demand aggregation (default: last 7 days). Supports City mode via city_id."""
     try:
-        db = safe_get_db()
+        db = _get_db_for_city(city_id)
         if db is None:
             return {"data": [], "count": 0, "error": "MongoDB connection failed"}
         
+        # City mode: read from processed_zone_data (field is "timestamp", not "processed_at")
+        if city_id:
+            query = {"city_id": city_id}
+            if zone_id:
+                query["zone_id"] = zone_id
+            
+            zones = list(db.processed_zone_data.find(query, {"_id": 0}).sort("timestamp", -1).limit(2000))
+            
+            # Extract demand from ml_processed.demand_forecast
+            data = []
+            for zone in zones:
+                ml = zone.get("ml_processed", {})
+                forecast = ml.get("demand_forecast", {})
+                if forecast and forecast.get("next_hour_kwh"):
+                    processed_at = zone.get("timestamp") or zone.get("processed_at")
+                    if isinstance(processed_at, str):
+                        processed_at = parser.parse(processed_at)
+                    if processed_at:
+                        data.append({
+                            "timestamp": processed_at.strftime("%Y-%m-%dT%H:00:00"),
+                            "total_kwh": round(forecast.get("next_hour_kwh", 0), 2),
+                            "avg_kwh": round(forecast.get("next_hour_kwh", 0), 4),
+                            "max_kwh": round(forecast.get("next_hour_kwh", 0), 4),
+                            "count": 1
+                        })
+            
+            # Group by hour
+            hourly_map = {}
+            for d in data:
+                hour_key = d["timestamp"][:13] + ":00:00"  # Round to hour
+                if hour_key not in hourly_map:
+                    hourly_map[hour_key] = {"total": 0, "count": 0, "max": 0, "values": []}
+                hourly_map[hour_key]["total"] += d["total_kwh"]
+                hourly_map[hour_key]["count"] += 1
+                hourly_map[hour_key]["values"].append(d["total_kwh"])
+            
+            result_data = []
+            for hour_key in sorted(hourly_map.keys())[-hours:]:
+                h = hourly_map[hour_key]
+                result_data.append({
+                    "timestamp": hour_key,
+                    "total_kwh": round(h["total"], 2),
+                    "avg_kwh": round(h["total"] / h["count"] if h["count"] > 0 else 0, 4),
+                    "max_kwh": round(max(h["values"]) if h["values"] else 0, 4),
+                    "count": h["count"]
+                })
+            
+            return {"data": result_data, "count": len(result_data)}
+        
+        # Sim mode: original logic
         pipeline = [
             {"$group": {
                 "_id": {
@@ -108,11 +170,69 @@ async def get_demand_by_zone():
 
 
 @router.get("/aqi/daily")
-async def get_daily_aqi(zone_id: Optional[str] = None, days: int = 30):
-    """Get daily AQI aggregation."""
+async def get_daily_aqi(zone_id: Optional[str] = None, days: int = 30, city_id: Optional[str] = Query(None)):
+    """Get daily AQI aggregation. Supports City mode via city_id."""
     try:
-        db = get_db()
+        db = _get_db_for_city(city_id)
+        if db is None:
+            return {"data": [], "count": 0, "error": "MongoDB connection failed"}
         
+        # City mode: read from processed_zone_data
+        if city_id:
+            query = {}
+            if zone_id:
+                query["zone_id"] = zone_id
+            
+            zones = list(db.processed_zone_data.find(query, {"_id": 0}).sort("processed_at", -1).limit(1000))
+            
+            # Extract AQI from raw_data.aqi
+            daily_map = {}
+            for zone in zones:
+                raw = zone.get("raw_data", {})
+                aqi_data = raw.get("aqi", {})
+                weather = raw.get("weather", {})
+                
+                if aqi_data and aqi_data.get("aqi"):
+                    processed_at = zone.get("processed_at")
+                    if isinstance(processed_at, str):
+                        processed_at = parser.parse(processed_at)
+                    if processed_at:
+                        date_key = processed_at.strftime("%Y-%m-%d")
+                        zone_key = zone.get("zone_id", "unknown")
+                        key = f"{zone_key}_{date_key}"
+                        
+                        if key not in daily_map:
+                            daily_map[key] = {
+                                "zone_id": zone_key,
+                                "date": date_key,
+                                "aqi_values": [],
+                                "temp_values": [],
+                                "humidity_values": []
+                            }
+                        
+                        daily_map[key]["aqi_values"].append(aqi_data.get("aqi", 0))
+                        if weather:
+                            if weather.get("temp") or weather.get("temperature"):
+                                daily_map[key]["temp_values"].append(weather.get("temp") or weather.get("temperature", 0))
+                            if weather.get("humidity"):
+                                daily_map[key]["humidity_values"].append(weather.get("humidity", 0))
+            
+            data = []
+            for key, d in daily_map.items():
+                data.append({
+                    "zone_id": d["zone_id"],
+                    "date": d["date"],
+                    "avg_aqi": round(sum(d["aqi_values"]) / len(d["aqi_values"]), 1) if d["aqi_values"] else None,
+                    "max_aqi": max(d["aqi_values"]) if d["aqi_values"] else None,
+                    "min_aqi": min(d["aqi_values"]) if d["aqi_values"] else None,
+                    "avg_temp": round(sum(d["temp_values"]) / len(d["temp_values"]), 1) if d["temp_values"] else None,
+                    "avg_humidity": round(sum(d["humidity_values"]) / len(d["humidity_values"]), 1) if d["humidity_values"] else None
+                })
+            
+            data.sort(key=lambda x: x["date"], reverse=True)
+            return {"data": data[:days * 20], "count": len(data)}
+        
+        # Sim mode: original logic
         pipeline = [
             {"$group": {
                 "_id": {
@@ -128,7 +248,7 @@ async def get_daily_aqi(zone_id: Optional[str] = None, days: int = 30):
                 "avg_humidity": {"$avg": "$humidity_pct"}
             }},
             {"$sort": {"_id.year": 1, "_id.month": 1, "_id.day": 1}},
-            {"$limit": days * 20}  # 20 zones max
+            {"$limit": days * 20}
         ]
         
         if zone_id:
@@ -194,22 +314,28 @@ async def get_aqi_by_zone():
 
 
 @router.get("/alerts/summary")
-async def get_alerts_summary():
-    """Get alerts summary by level and zone."""
+async def get_alerts_summary(city_id: Optional[str] = Query(None)):
+    """Get alerts summary by level and zone. Supports City mode via city_id."""
     try:
-        db = get_db()
+        db = _get_db_for_city(city_id)
+        if db is None:
+            return {"by_level": {}, "by_zone": [], "total": 0, "error": "MongoDB connection failed"}
+        
+        # Filter by city_id in City mode
+        match_stage = {"$match": {"city_id": city_id}} if city_id else None
         
         # By level
-        level_pipeline = [
-            {"$group": {
-                "_id": "$level",
-                "count": {"$sum": 1}
-            }}
-        ]
+        level_pipeline = []
+        if match_stage:
+            level_pipeline.append(match_stage)
+        level_pipeline.append({"$group": {"_id": "$level", "count": {"$sum": 1}}})
         by_level = list(db.alerts.aggregate(level_pipeline))
         
         # By zone
-        zone_pipeline = [
+        zone_pipeline = []
+        if match_stage:
+            zone_pipeline.append({"$match": {"city_id": city_id}})
+        zone_pipeline.extend([
             {"$group": {
                 "_id": "$zone_id",
                 "count": {"$sum": 1},
@@ -218,19 +344,27 @@ async def get_alerts_summary():
                 "watch_count": {"$sum": {"$cond": [{"$eq": ["$level", "watch"]}, 1, 0]}}
             }},
             {"$sort": {"count": -1}}
-        ]
+        ])
         by_zone = list(db.alerts.aggregate(zone_pipeline))
         
-        # Get zone names
-        zones = {z["_id"]: z["name"] for z in db.zones.find()}
+        # Get zone names (from processed_zone_data in city mode, zones collection in sim mode)
+        if city_id:
+            zones = {}
+            for z in db.processed_zone_data.find({"city_id": city_id}, {"zone_id": 1, "raw_data.zone_name": 1}):
+                zone_id = z.get("zone_id")
+                zone_name = z.get("raw_data", {}).get("zone_name") or f"Zone {zone_id}"
+                zones[zone_id] = zone_name
+        else:
+            zones = {z["_id"]: z["name"] for z in db.zones.find()}
         
         for z in by_zone:
             z["zone_name"] = zones.get(z["_id"], "Unknown")
         
+        total = db.alerts.count_documents({"city_id": city_id} if city_id else {})
         return {
             "by_level": {r["_id"]: r["count"] for r in by_level},
             "by_zone": by_zone,
-            "total": db.alerts.count_documents({})
+            "total": total
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -357,19 +491,62 @@ async def get_zone_risk_factors():
 
 
 @router.get("/anomalies")
-async def get_consumption_anomalies(threshold: float = 2.0, limit: int = 50):
-    """Find consumption anomalies (readings above threshold * baseline)."""
+async def get_consumption_anomalies(
+    threshold: float = 2.0,
+    limit: int = 50,
+    city_id: Optional[str] = Query(None),
+    hours: int = Query(168, ge=1, le=720),
+):
+    """Find consumption anomalies. In City mode (city_id) uses processed_zone_data for timeline."""
     try:
-        db = safe_get_db()
+        db = _get_db_for_city(city_id) if city_id else safe_get_db()
         if db is None:
             return {"anomalies": [], "count": 0, "error": "MongoDB connection failed"}
-        
-        # Get households with baselines
+
+        # City mode: build anomaly timeline from processed_zone_data
+        if city_id:
+            query = {"city_id": city_id}
+            try:
+                cursor = db.processed_zone_data.find(
+                    query, {"_id": 0, "zone_id": 1, "timestamp": 1, "ml_processed.anomaly_detection": 1}
+                ).sort("timestamp", -1).limit(min(2000, limit * 24))
+                docs = list(cursor)
+            except Exception:
+                docs = []
+            anomalies = []
+            for zone in docs:
+                ts = zone.get("timestamp")
+                if isinstance(ts, str):
+                    try:
+                        ts = parser.parse(ts)
+                    except Exception:
+                        ts = None
+                if not ts:
+                    continue
+                ad = (zone.get("ml_processed") or {}).get("anomaly_detection") or {}
+                if not isinstance(ad, dict):
+                    continue
+                kwh = ad.get("current_demand") or 0
+                baseline = ad.get("baseline_mean") or (kwh / 2)
+                is_anomaly = ad.get("is_anomaly", False)
+                score = ad.get("anomaly_score") or 0
+                ts_str = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
+                anomalies.append({
+                    "zone_id": zone.get("zone_id"),
+                    "household_id": zone.get("zone_id"),
+                    "timestamp": ts_str,
+                    "kwh": round(float(kwh), 3),
+                    "baseline_hourly": round(float(baseline), 3),
+                    "multiplier": round(float(kwh) / baseline, 1) if baseline else 0,
+                    "is_anomaly": is_anomaly,
+                    "anomaly_score": round(float(score), 2),
+                })
+            anomalies.sort(key=lambda x: (x.get("timestamp") or ""), reverse=True)
+            return {"anomalies": anomalies[:limit], "count": len(anomalies)}
+
+        # Sim mode: meter_readings + households
         households = {h["_id"]: h for h in db.households.find()}
-        
-        # Get recent high readings
         readings = list(db.meter_readings.find().sort("kwh", -1).limit(1000))
-        
         anomalies = []
         for r in readings:
             household = households.get(r["household_id"])
@@ -384,10 +561,7 @@ async def get_consumption_anomalies(threshold: float = 2.0, limit: int = 50):
                         "baseline_hourly": round(hourly_baseline, 3),
                         "multiplier": round(r["kwh"] / hourly_baseline, 1)
                     })
-        
-        # Sort by multiplier
         anomalies.sort(key=lambda x: x["multiplier"], reverse=True)
-        
         return {"anomalies": anomalies[:limit], "count": len(anomalies)}
     except Exception as e:
         return {"anomalies": [], "count": 0, "error": str(e)}

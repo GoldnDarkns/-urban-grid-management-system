@@ -1,8 +1,17 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MapPin, RefreshCw, CheckCircle2, Loader } from 'lucide-react';
-import { cityAPI } from '../services/api';
+import { MapPin, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { cityAPI, liveStreamAPI } from '../services/api';
 import CityProcessingModal from './CityProcessingModal';
+
+const FALLBACK_CITIES = [
+  { id: 'nyc', name: 'New York City', state: 'NY', country: 'USA', population: 8336817, num_zones: 40 },
+  { id: 'chicago', name: 'Chicago', state: 'IL', country: 'USA', population: 2693976, num_zones: 25 },
+  { id: 'la', name: 'Los Angeles', state: 'CA', country: 'USA', population: 3898747, num_zones: 35 },
+  { id: 'sf', name: 'San Francisco', state: 'CA', country: 'USA', population: 873965, num_zones: 12 },
+  { id: 'houston', name: 'Houston', state: 'TX', country: 'USA', population: 2320268, num_zones: 25 },
+  { id: 'phoenix', name: 'Phoenix', state: 'AZ', country: 'USA', population: 1680992, num_zones: 20 },
+];
 
 export default function CitySelector({ onCityChange, onProcessingStart, onProcessingComplete }) {
   const [cities, setCities] = useState([]);
@@ -11,10 +20,17 @@ export default function CitySelector({ onCityChange, onProcessingStart, onProces
   const [processing, setProcessing] = useState(false);
   const [processingStatus, setProcessingStatus] = useState(null);
   const [isOpen, setIsOpen] = useState(false);
+  const processingCancelledRef = useRef(false);
 
   useEffect(() => {
     fetchCities();
     fetchCurrentCity();
+  }, []);
+
+  useEffect(() => {
+    const open = () => setIsOpen(true);
+    window.addEventListener('ugms-open-city-selector', open);
+    return () => window.removeEventListener('ugms-open-city-selector', open);
   }, []);
 
   const fetchCities = async () => {
@@ -23,6 +39,7 @@ export default function CitySelector({ onCityChange, onProcessingStart, onProces
       setCities(res.data.cities || []);
     } catch (error) {
       console.error('Error fetching cities:', error);
+      setCities(FALLBACK_CITIES);
     } finally {
       setLoading(false);
     }
@@ -31,16 +48,24 @@ export default function CitySelector({ onCityChange, onProcessingStart, onProces
   const fetchCurrentCity = async () => {
     try {
       const res = await cityAPI.getCurrentCity();
-      setCurrentCity(res.data);
-      if (onCityChange) {
-        onCityChange(res.data);
-      }
-    } catch (error) {
-      console.error('Error fetching current city:', error);
+      const data = res.data;
+      const current = data?.selected && data?.city_id ? data : null;
+      setCurrentCity(current);
+      if (onCityChange) onCityChange(current);
+    } catch (e) {
+      console.error('Error fetching current city:', e);
+      setCurrentCity(null);
     }
   };
 
+  const handleCloseModal = () => {
+    processingCancelledRef.current = true;
+    setProcessing(false);
+    setProcessingStatus(null);
+  };
+
   const handleCitySelect = async (cityId) => {
+    processingCancelledRef.current = false;
     const selectedCity = cities.find(c => c.id === cityId);
     setProcessing(true);
     setProcessingStatus({ 
@@ -50,14 +75,18 @@ export default function CitySelector({ onCityChange, onProcessingStart, onProces
     });
     
     try {
-      // Step 1: Selecting city
+      // Step 1: Selecting city (backend returns in <1s; show hint if slow)
       setProcessingStatus({ 
         message: 'Selecting city and initializing configuration...', 
         stage: 'selecting',
         cityName: selectedCity?.name 
       });
-      
+      const slowSelectHint = setTimeout(() => {
+        setProcessingStatus(prev => prev?.stage === 'selecting' ? { ...prev, message: 'Taking longer than usual—please wait...' } : prev);
+      }, 8000);
       const selectRes = await cityAPI.selectCity(cityId);
+      clearTimeout(slowSelectHint);
+      if (processingCancelledRef.current) return;
       const data = selectRes.data;
 
       if (data && data.success === false) {
@@ -80,98 +109,56 @@ export default function CitySelector({ onCityChange, onProcessingStart, onProces
         stage: 'zones',
         cityName: data.name 
       });
-      
-      // Step 3: Reverse geocoding (happens during zone calculation)
-      setProcessingStatus({ 
-        message: 'Fetching real neighborhood names from coordinates...', 
-        stage: 'geocoding',
-        cityName: data.name 
-      });
-      
-      // Wait a bit to show geocoding step (it happens in backend)
-      await new Promise(resolve => setTimeout(resolve, 500));
+      if (processingCancelledRef.current) return;
 
       setCurrentCity(data);
       setIsOpen(false);
       if (onCityChange) onCityChange(data);
-      try {
-        window.dispatchEvent(new CustomEvent('ugms-city-changed', { detail: { city_id: data.city_id, name: data.name } }));
-      } catch (_) {}
 
       if (onProcessingStart) onProcessingStart();
 
-      // Process all zones (this does all the API fetching and ML processing)
-      // Update progress as we go
-      let processRes = { data: { summary: { successful: 0 } } };
+      let processRes = { data: { summary: { successful: 0 }, city_id: data.city_id } };
       try {
-        // Start processing - show API fetching steps
+        // Step 3: Process all zones (real work: Weather, AQI, Traffic, ML, store)
         setProcessingStatus({ 
-          message: 'Fetching weather data from OpenWeatherMap...', 
-          stage: 'weather',
+          message: 'Fetching live data (Weather, AQI, Traffic) and running ML per zone...', 
+          stage: 'processing',
           cityName: data.name 
         });
-        await new Promise(resolve => setTimeout(resolve, 800));
-
-        setProcessingStatus({ 
-          message: 'Fetching air quality data from AirVisual...', 
-          stage: 'aqi',
-          cityName: data.name 
-        });
-        await new Promise(resolve => setTimeout(resolve, 800));
-
-        setProcessingStatus({ 
-          message: 'Fetching traffic data from TomTom...', 
-          stage: 'traffic',
-          cityName: data.name 
-        });
-        await new Promise(resolve => setTimeout(resolve, 800));
-
-        // Start actual processing (this will take time)
-        const processPromise = cityAPI.processAllZones(cityId);
+        if (processingCancelledRef.current) return;
+        processRes = await cityAPI.processAllZones(cityId);
+        if (processingCancelledRef.current) return;
         
-        // Show ML processing steps while waiting
-        setTimeout(() => {
-          setProcessingStatus({ 
-            message: 'Running LSTM model for demand forecasting...', 
-            stage: 'lstm',
-            cityName: data.name 
+        // Check for DB errors in response
+        if (processRes.data?.error && processRes.data?.error.includes("MongoDB")) {
+          setProcessingStatus({
+            message: `Database error: ${processRes.data.error}. Data was NOT saved.`,
+            stage: 'error',
+            error: processRes.data.error,
+            cityName: data.name
           });
-        }, 1000);
-
-        setTimeout(() => {
-          setProcessingStatus({ 
-            message: 'Running Autoencoder for anomaly detection...', 
-            stage: 'autoencoder',
-            cityName: data.name 
+          setTimeout(() => {
+            setProcessing(false);
+            setProcessingStatus(null);
+          }, 8000);
+          return;
+        }
+        
+        if (processRes.data?.db_status && processRes.data.db_status !== 'connected') {
+          setProcessingStatus({
+            message: `Warning: Database status: ${processRes.data.db_status}. Some data may not have been saved.`,
+            stage: 'error',
+            error: `DB status: ${processRes.data.db_status}`,
+            cityName: data.name
           });
-        }, 2000);
-
-        setTimeout(() => {
-          setProcessingStatus({ 
-            message: 'Running GNN for zone risk scoring...', 
-            stage: 'gnn',
-            cityName: data.name 
-          });
-        }, 3000);
-
-        setTimeout(() => {
-          setProcessingStatus({ 
-            message: 'Running ARIMA for statistical forecasting...', 
-            stage: 'arima',
-            cityName: data.name 
-          });
-        }, 4000);
-
-        setTimeout(() => {
-          setProcessingStatus({ 
-            message: 'Running Prophet for seasonal analysis...', 
-            stage: 'prophet',
-            cityName: data.name 
-          });
-        }, 5000);
-
-        processRes = await processPromise;
+          setTimeout(() => {
+            setProcessing(false);
+            setProcessingStatus(null);
+          }, 8000);
+          return;
+        }
       } catch (err) {
+        if (processingCancelledRef.current) return;
         console.error('Process all zones error:', err);
         setProcessingStatus({
           message: `Processing failed: ${err.response?.data?.error || err.message || 'Unknown error'}`,
@@ -186,25 +173,33 @@ export default function CitySelector({ onCityChange, onProcessingStart, onProces
         return;
       }
 
-      // Step 12: AI Recommendations
+      // Step 4: Verify Kafka live feed (read-only check; pipeline runs separately)
       setProcessingStatus({ 
-        message: 'Generating AI-powered recommendations...', 
-        stage: 'recommendations',
+        message: 'Verifying Kafka live feed availability...', 
+        stage: 'kafka',
         cityName: data.name 
       });
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      if (processingCancelledRef.current) return;
+      try {
+        await Promise.race([
+          liveStreamAPI.getLiveStream(5),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))
+        ]);
+      } catch (_) {
+        // Non-blocking: Kafka may not be running; continue
+      }
+      if (processingCancelledRef.current) return;
 
-      // Step 13: EIA Data
+      // Step 5: EIA data
       setProcessingStatus({ 
         message: 'Processing EIA energy grid data...', 
         stage: 'eia',
         cityName: data.name 
       });
-      
       await cityAPI.processEIA(cityId).catch((err) => console.error('EIA processing error:', err));
-      await new Promise(resolve => setTimeout(resolve, 500));
+      if (processingCancelledRef.current) return;
 
-      // Step 14: Complete
+      // Step 6: Complete – fire events only now so tabs refetch and see data immediately
       setProcessingStatus({
         message: `Successfully processed ${processRes.data?.summary?.successful ?? 0} zones`,
         stage: 'complete',
@@ -214,14 +209,17 @@ export default function CitySelector({ onCityChange, onProcessingStart, onProces
 
       if (onProcessingComplete) onProcessingComplete(processRes.data);
       try {
-        window.dispatchEvent(new CustomEvent('ugms-city-processed', { detail: { city_id: processRes.data?.city_id, summary: processRes.data?.summary } }));
+        window.dispatchEvent(new CustomEvent('ugms-city-changed', { detail: { city_id: data.city_id, name: data.name } }));
+        window.dispatchEvent(new CustomEvent('ugms-city-processed', { detail: { city_id: processRes.data?.city_id ?? data.city_id, summary: processRes.data?.summary } }));
       } catch (_) {}
 
       setTimeout(() => {
+        if (processingCancelledRef.current) return;
         setProcessingStatus(null);
         setProcessing(false);
       }, 3000);
     } catch (error) {
+      if (processingCancelledRef.current) return;
       console.error('Error selecting city:', error);
       setProcessingStatus({
         message: `Error: ${error.response?.data?.error || error.response?.data?.detail || error.message || 'Network error'}`,
@@ -238,42 +236,56 @@ export default function CitySelector({ onCityChange, onProcessingStart, onProces
 
   const handleRefresh = async () => {
     if (!currentCity) return;
-    
+    processingCancelledRef.current = false;
+    const cid = currentCity.city_id;
+    const cname = currentCity.name;
+
     try {
       setProcessing(true);
-      setProcessingStatus({ 
-        message: 'Refreshing data and reprocessing...', 
-        stage: 'processing' 
-      });
+      setProcessingStatus({ message: 'Refreshing: processing all zones...', stage: 'processing', cityName: cname });
+      if (onProcessingStart) onProcessingStart();
 
-      if (onProcessingStart) {
-        onProcessingStart();
-      }
+      const processRes = await cityAPI.processAllZones(cid);
+      if (processingCancelledRef.current) return;
 
-      const processRes = await cityAPI.processAllZones(currentCity.city_id);
-      
+      setProcessingStatus({ message: 'Verifying Kafka live feed...', stage: 'kafka', cityName: cname });
+      try {
+        await Promise.race([
+          liveStreamAPI.getLiveStream(5),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000))
+        ]);
+      } catch (_) {}
+      if (processingCancelledRef.current) return;
+
+      setProcessingStatus({ message: 'Processing EIA data...', stage: 'eia', cityName: cname });
+      await cityAPI.processEIA(cid).catch(() => {});
+      if (processingCancelledRef.current) return;
+
       setProcessingStatus({
-        message: `✅ Updated ${processRes.data.summary?.successful || 0} zones`,
+        message: `Updated ${processRes.data?.summary?.successful ?? 0} zones`,
         stage: 'complete',
-        data: processRes.data
+        data: processRes.data,
+        cityName: cname
       });
-
-      if (onProcessingComplete) {
-        onProcessingComplete(processRes.data);
-      }
+      if (onProcessingComplete) onProcessingComplete(processRes.data);
+      try {
+        window.dispatchEvent(new CustomEvent('ugms-city-processed', { detail: { city_id: cid, summary: processRes.data?.summary } }));
+      } catch (_) {}
 
       setTimeout(() => {
+        if (processingCancelledRef.current) return;
         setProcessingStatus(null);
         setProcessing(false);
       }, 3000);
-
     } catch (error) {
+      if (processingCancelledRef.current) return;
       console.error('Error refreshing:', error);
       setProcessingStatus({
-        message: `❌ Error: ${error.response?.data?.detail || error.message}`,
-        stage: 'error'
+        message: `Error: ${error.response?.data?.error ?? error.response?.data?.detail ?? error.message}`,
+        stage: 'error',
+        cityName: cname
       });
-      setProcessing(false);
+      setTimeout(() => { setProcessing(false); setProcessingStatus(null); }, 5000);
     }
   };
 
@@ -352,12 +364,7 @@ export default function CitySelector({ onCityChange, onProcessingStart, onProces
 
       <CityProcessingModal
         isOpen={processing}
-        onClose={() => {
-          if (processingStatus?.stage === 'complete' || processingStatus?.stage === 'error') {
-            setProcessing(false);
-            setProcessingStatus(null);
-          }
-        }}
+        onClose={handleCloseModal}
         cityName={processingStatus?.cityName || currentCity?.name}
         progress={processingStatus}
       />

@@ -353,7 +353,7 @@ export default function CityMap() {
               className={`mode-btn ${simulationMode === 'lstm' ? 'active' : ''}`}
               onClick={() => { resetSimulation(); setSimulationMode('lstm'); }}
             >
-              <Activity size={16} /> LSTM
+              <Activity size={16} /> TFT / LSTM
             </button>
             <button 
               className={`mode-btn ${simulationMode === 'gnn' ? 'active' : ''}`}
@@ -396,10 +396,12 @@ export default function CityMap() {
 
       <div className="map-container">
         <div className="map-main">
+          <div className="map-svg-wrapper">
           <svg 
             ref={svgRef}
             viewBox="0 0 720 460" 
             className="city-svg"
+            preserveAspectRatio="xMidYMid meet"
           >
             <defs>
               {/* Glow filter */}
@@ -631,6 +633,7 @@ export default function CityMap() {
               </g>
             )}
           </svg>
+          </div>
 
           {/* Legend */}
           <div className="map-legend">
@@ -660,22 +663,22 @@ export default function CityMap() {
           <div className="panel-section mode-info">
             <h3>
               {simulationMode === 'realtime' && <><Zap size={18} /> Real-time Mode</>}
-              {simulationMode === 'lstm' && <><Activity size={18} /> LSTM Prediction</>}
+              {simulationMode === 'lstm' && <><Activity size={18} /> TFT / LSTM Demand Prediction</>}
               {simulationMode === 'gnn' && <><Network size={18} /> GNN Message Passing</>}
               {simulationMode === 'cascade' && <><AlertTriangle size={18} /> Risk Cascade</>}
             </h3>
             <p>
               {simulationMode === 'realtime' && 'Showing live energy flow between zones. Particles represent power distribution through the grid.'}
-              {simulationMode === 'lstm' && 'Visualizing how LSTM processes 24 hours of historical data to predict next hour demand.'}
+              {simulationMode === 'lstm' && 'Visualizing how TFT/LSTM process 24 hours of historical data to predict next hour demand. TFT is our primary model; LSTM is kept for comparison.'}
               {simulationMode === 'gnn' && 'Click a zone to see how GNN aggregates neighbor features for risk scoring.'}
               {simulationMode === 'cascade' && 'Click any zone to simulate a failure and watch risk propagate through the network.'}
             </p>
           </div>
 
-          {/* LSTM Animation Panel */}
+          {/* TFT / LSTM Animation Panel */}
           {simulationMode === 'lstm' && (
             <div className="panel-section lstm-panel">
-              <h4>LSTM Processing</h4>
+              <h4>TFT / LSTM Demand Processing</h4>
               <div className="lstm-visualization">
                 <div className="lstm-input">
                   <span>Input Sequence (24h)</span>
@@ -1039,13 +1042,26 @@ export default function CityMap() {
           background: var(--bg-card);
           border: 1px solid var(--border-color);
           border-radius: 12px;
-          overflow: hidden;
+          overflow: visible;
+          display: flex;
+          flex-direction: column;
+          min-height: 0;
+        }
+
+        .map-svg-wrapper {
+          overflow: auto;
+          max-height: 75vh;
+          min-height: 360px;
+          flex: 1;
+          border-radius: 0 0 12px 12px;
         }
 
         .city-svg {
           width: 100%;
           height: auto;
+          min-width: 720px;
           min-height: 460px;
+          display: block;
           background: linear-gradient(180deg, #0a0a0f 0%, #12121a 100%);
         }
 

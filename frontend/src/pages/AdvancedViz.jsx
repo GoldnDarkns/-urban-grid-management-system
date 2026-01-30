@@ -5,7 +5,8 @@ import {
   RotateCcw, ChevronRight, Zap, AlertTriangle, TrendingUp, Info,
   Database, Code, PlayCircle, Loader
 } from 'lucide-react';
-import { queriesAPI, analyticsAPI, dataAPI } from '../services/api';
+import { queriesAPI, analyticsAPI, dataAPI, cityAPI } from '../services/api';
+import { useAppMode } from '../utils/useAppMode';
 import { 
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, AreaChart, Area, BarChart, Bar, Cell
@@ -199,24 +200,76 @@ function RecoveryTimeline() {
 
 // ==================== HEATMAP OVERLAY ====================
 function HeatmapOverlay() {
+  const { mode } = useAppMode();
+  const [currentCityId, setCurrentCityId] = useState(null);
   const [metric, setMetric] = useState('demand');
   const [hoveredZone, setHoveredZone] = useState(null);
   const [realData, setRealData] = useState({ zones: [], demand: [], aqi: [], risk: [] });
   const canvasRef = useRef(null);
 
   useEffect(() => {
+    if (mode === 'city') {
+      cityAPI.getCurrentCity().then((r) => setCurrentCityId(r.data?.city_id || null)).catch(() => setCurrentCityId(null));
+    } else {
+      setCurrentCityId(null);
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== 'city') return;
+    const onCityChanged = () => {
+      cityAPI.getCurrentCity().then((r) => setCurrentCityId(r.data?.city_id || null)).catch(() => setCurrentCityId(null));
+    };
+    window.addEventListener('ugms-city-changed', onCityChanged);
+    window.addEventListener('ugms-city-processed', onCityChanged);
+    return () => {
+      window.removeEventListener('ugms-city-changed', onCityChanged);
+      window.removeEventListener('ugms-city-processed', onCityChanged);
+    };
+  }, [mode]);
+
+  useEffect(() => {
     fetchRealData();
-  }, []);
+  }, [mode, currentCityId]);
 
   const fetchRealData = async () => {
     try {
+      if (mode === 'city' && !currentCityId) return;
+      if (mode === 'city' && currentCityId) {
+        const [processedRes, zoneCoordsRes] = await Promise.all([
+          cityAPI.getProcessedData(currentCityId, null, 100).catch(() => ({ data: { zones: [] } })),
+          cityAPI.getZoneCoordinates(currentCityId).catch(() => ({ data: { zones: [] } }))
+        ]);
+        const zones = processedRes.data?.zones || [];
+        const zoneCoords = zoneCoordsRes.data?.zones || [];
+        const zoneNameMap = new Map(zoneCoords.map((z) => [z.zone_id, z.name || z.zone_id]));
+        const zonesList = (zoneCoords.length ? zoneCoords : zones).map((z) => ({
+          _id: z.zone_id || z._id,
+          name: zoneNameMap.get(z.zone_id) || z.name || z.zone_id,
+          zone_type: 'Standard'
+        }));
+        const demand = zones.map((z) => {
+          const kwh = z.ml_processed?.demand_forecast?.next_hour_kwh ?? 0;
+          return { zone_id: z.zone_id, avg_kwh: kwh, total_kwh: kwh };
+        });
+        const aqi = {};
+        zones.forEach((z) => {
+          const v = z.raw_data?.aqi?.aqi ?? z.ml_processed?.aqi_prediction?.next_hour_aqi ?? 0;
+          if (z.zone_id) aqi[z.zone_id] = { avg_aqi: v };
+        });
+        const risk = zones.map((z) => ({
+          zone_id: z.zone_id,
+          risk_score: z.ml_processed?.risk_score?.score ?? 0
+        }));
+        setRealData({ zones: zonesList, demand, aqi, risk });
+        return;
+      }
       const [zonesRes, demandRes, aqiRes, riskRes] = await Promise.all([
         dataAPI.getZones().catch(() => ({ data: { zones: [] } })),
         analyticsAPI.getDemandByZone().catch(() => ({ data: { data: [] } })),
         analyticsAPI.getAQIByZone().catch(() => ({ data: { data: {} } })),
         analyticsAPI.getZoneRisk().catch(() => ({ data: { data: [] } }))
       ]);
-      
       setRealData({
         zones: zonesRes.data.zones || [],
         demand: demandRes.data.data || [],
@@ -454,34 +507,107 @@ function HeatmapOverlay() {
 
 // ==================== ZONE COMPARISON ====================
 function ZoneComparison() {
+  const { mode } = useAppMode();
+  const [currentCityId, setCurrentCityId] = useState(null);
   const [zone1, setZone1] = useState(null);
   const [zone2, setZone2] = useState(null);
   const [zonesData, setZonesData] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (mode === 'city') {
+      cityAPI.getCurrentCity().then((r) => setCurrentCityId(r.data?.city_id || null)).catch(() => setCurrentCityId(null));
+    } else {
+      setCurrentCityId(null);
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== 'city') return;
+    const onCityChanged = () => {
+      cityAPI.getCurrentCity().then((r) => setCurrentCityId(r.data?.city_id || null)).catch(() => setCurrentCityId(null));
+    };
+    window.addEventListener('ugms-city-changed', onCityChanged);
+    window.addEventListener('ugms-city-processed', onCityChanged);
+    return () => {
+      window.removeEventListener('ugms-city-changed', onCityChanged);
+      window.removeEventListener('ugms-city-processed', onCityChanged);
+    };
+  }, [mode]);
+
+  useEffect(() => {
     fetchZonesData();
-  }, []);
+  }, [mode, currentCityId]);
 
   const fetchZonesData = async () => {
     try {
+      if (mode === 'city' && !currentCityId) {
+        setLoading(false);
+        return;
+      }
+      if (mode === 'city' && currentCityId) {
+        const [processedRes, zoneCoordsRes] = await Promise.all([
+          cityAPI.getProcessedData(currentCityId, null, 100).catch(() => ({ data: { zones: [] } })),
+          cityAPI.getZoneCoordinates(currentCityId).catch(() => ({ data: { zones: [] } }))
+        ]);
+        const zones = processedRes.data?.zones || [];
+        const zoneCoords = zoneCoordsRes.data?.zones || [];
+        const zoneNameMap = new Map(zoneCoords.map((z) => [z.zone_id, z.name || z.zone_id]));
+        const zonesList = (zoneCoords.length ? zoneCoords : zones).map((z) => ({
+          _id: z.zone_id || z._id,
+          name: zoneNameMap.get(z.zone_id) || z.name || z.zone_id,
+          population_est: 0
+        }));
+        const demand = zones.map((z) => {
+          const kwh = z.ml_processed?.demand_forecast?.next_hour_kwh ?? 0;
+          return { zone_id: z.zone_id, avg_kwh: kwh, total_kwh: kwh };
+        });
+        const aqi = {};
+        zones.forEach((z) => {
+          const v = z.raw_data?.aqi?.aqi ?? z.ml_processed?.aqi_prediction?.next_hour_aqi ?? 0;
+          if (z.zone_id) aqi[z.zone_id] = { avg_aqi: v };
+        });
+        const risk = zones.map((z) => ({
+          zone_id: z.zone_id,
+          risk_score: z.ml_processed?.risk_score?.score ?? 0
+        }));
+        const combined = zonesList.slice(0, 10).map((zone) => {
+          const zoneDemand = demand.find((d) => d.zone_id === zone._id);
+          const zoneAQI = aqi[zone._id];
+          const zoneRisk = risk.find((r) => r.zone_id === zone._id);
+          const d = zoneDemand ? (zoneDemand.avg_kwh || zoneDemand.total_kwh || 0) : 0;
+          return {
+            id: zone._id,
+            name: zone.name || zone._id,
+            demand: d,
+            aqi: zoneAQI ? (zoneAQI.avg_aqi || 0) : 0,
+            risk: zoneRisk ? (zoneRisk.risk_score || 0) : 0,
+            population: zone.population_est || 0,
+            efficiency: d ? Math.min(100, (d / 100) * 100) : 0
+          };
+        });
+        setZonesData(combined);
+        if (combined.length >= 2) {
+          setZone1(combined[0].id);
+          setZone2(combined[1].id);
+        }
+        setLoading(false);
+        return;
+      }
       const [zonesRes, demandRes, aqiRes, riskRes] = await Promise.all([
         dataAPI.getZones().catch(() => ({ data: { zones: [] } })),
         analyticsAPI.getDemandByZone().catch(() => ({ data: { data: [] } })),
         analyticsAPI.getAQIByZone().catch(() => ({ data: { data: {} } })),
         analyticsAPI.getZoneRisk().catch(() => ({ data: { data: [] } }))
       ]);
-      
       const zones = zonesRes.data.zones || [];
       const demand = demandRes.data.data || [];
       const aqi = aqiRes.data.data || {};
       const risk = riskRes.data.data || [];
-      
-      const combined = zones.slice(0, 10).map(zone => {
-        const zoneDemand = demand.find(d => d.zone_id === zone._id);
+      const combined = zones.slice(0, 10).map((zone) => {
+        const zoneDemand = demand.find((d) => d.zone_id === zone._id);
         const zoneAQI = aqi[zone._id];
-        const zoneRisk = risk.find(r => r.zone_id === zone._id);
-        
+        const zoneRisk = risk.find((r) => r.zone_id === zone._id);
         return {
           id: zone._id,
           name: zone.name || zone._id,
@@ -492,7 +618,6 @@ function ZoneComparison() {
           efficiency: zoneDemand && zoneDemand.avg_kwh ? Math.min(100, (zoneDemand.avg_kwh / 100) * 100) : 0
         };
       });
-      
       setZonesData(combined);
       if (combined.length >= 2) {
         setZone1(combined[0].id);
@@ -787,13 +912,109 @@ function NetworkFlow() {
 }
 
 // ==================== MONGODB QUERIES ====================
+// Query code templates for display
+const QUERY_CODES = {
+  // READ queries (1-10)
+  1: `db.zones.find({ "critical_sites": "hospital" }).limit(10)`,
+  2: `db.zones.find({}).sort({ "grid_priority": -1 }).limit(10)`,
+  3: `db.grid_edges.find({ "from_zone": "Z_001" })`,
+  4: `db.meter_readings.aggregate([
+  { "$match": { "zone_id": "Z_001", "ts": { "$gte": ISODate() } }},
+  { "$group": { "_id": { "hour": { "$hour": "$ts" }}, "total_kwh": { "$sum": "$kwh" }}}
+])`,
+  5: `db.air_climate_readings.aggregate([
+  { "$match": { "aqi": { "$gte": 101 } }},
+  { "$group": { "_id": "$zone_id", "violation_count": { "$sum": 1 }, "max_aqi": { "$max": "$aqi" }}}
+])`,
+  6: `// Find households with consumption > 2x baseline
+db.meter_readings.find({ "kwh": { "$gt": baseline * 2 } })`,
+  7: `db.constraint_events.find({
+  "$or": [{ "end_ts": { "$gte": now } }, { "start_ts": { "$gte": weekAgo } }]
+}).sort({ "start_ts": -1 })`,
+  8: `// Calculate risk score per zone based on priority, critical sites, AQI, demand
+db.zones.aggregate([...riskCalculationPipeline])`,
+  9: `// Join meter_readings with air_climate_readings by hour
+db.meter_readings.aggregate([...demandTempCorrelation])`,
+  10: `db.zones.find({ "critical_sites": { "$exists": true, "$ne": [] } })`,
+  // CRUD queries (11-15)
+  11: `// INSERT new meter reading
+db.meter_readings.insertOne({
+  "zone_id": "Z_001",
+  "household_id": "H_001", 
+  "kwh": 1.5,
+  "ts": ISODate("2024-01-15T10:00:00Z")
+})`,
+  12: `// UPDATE meter reading - change kWh value
+db.meter_readings.updateOne(
+  { "zone_id": "Z_001", "household_id": "H_001" },
+  { "$set": { "kwh": 2.5 } }
+)`,
+  13: `// INSERT new AQI reading
+db.air_climate_readings.insertOne({
+  "zone_id": "Z_001",
+  "aqi": 85,
+  "temperature_c": 25.5,
+  "humidity": 60,
+  "ts": ISODate("2024-01-15T10:00:00Z")
+})`,
+  14: `// UPDATE AQI reading - change AQI and temperature
+db.air_climate_readings.updateOne(
+  { "zone_id": "Z_001" },
+  { "$set": { "aqi": 120, "temperature_c": 28.0 } }
+)`,
+  15: `// DELETE old readings (older than 168 hours)
+db.meter_readings.deleteMany({
+  "ts": { "$lt": ISODate("cutoff_time") },
+  "zone_id": "Z_001"  // optional filter
+})`
+};
+
 function MongoDBQueries() {
+  const { mode } = useAppMode();
+  const [currentCityId, setCurrentCityId] = useState(null);
   const [queries, setQueries] = useState([]);
   const [selectedQuery, setSelectedQuery] = useState(null);
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [params, setParams] = useState({ zone_id: 'Z_001', limit: 10, hours: 24 });
+  const [showCode, setShowCode] = useState(false);
+  
+  // CRUD form state
+  const [crudForm, setCrudForm] = useState({
+    zone_id: 'Z_001',
+    household_id: 'H_001',
+    kwh: 1.5,
+    new_kwh: 2.5,
+    aqi: 85,
+    new_aqi: 120,
+    temperature_c: 25.5,
+    new_temperature_c: 28.0,
+    humidity: 60,
+    hours_old: 168,
+    collection: 'meter_readings'
+  });
+
+  useEffect(() => {
+    if (mode === 'city') {
+      cityAPI.getCurrentCity().then((r) => setCurrentCityId(r.data?.city_id || null)).catch(() => setCurrentCityId(null));
+    } else {
+      setCurrentCityId(null);
+    }
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode !== 'city') return;
+    const onCityChanged = () => {
+      cityAPI.getCurrentCity().then((r) => setCurrentCityId(r.data?.city_id || null)).catch(() => setCurrentCityId(null));
+    };
+    window.addEventListener('ugms-city-changed', onCityChanged);
+    window.addEventListener('ugms-city-processed', onCityChanged);
+    return () => {
+      window.removeEventListener('ugms-city-changed', onCityChanged);
+      window.removeEventListener('ugms-city-processed', onCityChanged);
+    };
+  }, [mode]);
 
   useEffect(() => {
     loadQueries();
@@ -815,19 +1036,71 @@ function MongoDBQueries() {
     setResults(null);
     
     try {
-      const queryParams = { ...params };
-      if (queryId === 3 || queryId === 4) {
-        queryParams.zone_id = params.zone_id;
+      // CRUD queries (11-15) use POST with body
+      if (queryId >= 11 && queryId <= 15) {
+        let body = {};
+        
+        if (queryId === 11) {
+          // INSERT Meter Reading
+          body = {
+            zone_id: crudForm.zone_id,
+            household_id: crudForm.household_id,
+            kwh: parseFloat(crudForm.kwh),
+            ts: new Date().toISOString()
+          };
+        } else if (queryId === 12) {
+          // UPDATE Meter Reading
+          body = {
+            zone_id: crudForm.zone_id,
+            household_id: crudForm.household_id,
+            new_kwh: parseFloat(crudForm.new_kwh)
+          };
+        } else if (queryId === 13) {
+          // INSERT AQI Reading
+          body = {
+            zone_id: crudForm.zone_id,
+            aqi: parseInt(crudForm.aqi),
+            temperature_c: parseFloat(crudForm.temperature_c),
+            humidity: parseInt(crudForm.humidity),
+            ts: new Date().toISOString()
+          };
+        } else if (queryId === 14) {
+          // UPDATE AQI Reading
+          body = {
+            zone_id: crudForm.zone_id,
+            new_aqi: parseInt(crudForm.new_aqi),
+            new_temperature_c: parseFloat(crudForm.new_temperature_c)
+          };
+        } else if (queryId === 15) {
+          // DELETE Old Readings
+          body = {
+            collection: crudForm.collection,
+            hours_old: parseInt(crudForm.hours_old),
+            zone_id: crudForm.zone_id
+          };
+        }
+        
+        const response = await queriesAPI.executeCrudQuery(queryId, body);
+        setResults(response.data);
+      } else {
+        // READ queries (1-10) use GET with params
+        const queryParams = { ...params };
+        if (queryId === 3 || queryId === 4) {
+          queryParams.zone_id = params.zone_id;
+        }
+        if (queryId === 4 || queryId === 9) {
+          queryParams.hours = params.hours;
+        }
+        if (queryId !== 3 && queryId !== 4 && queryId !== 9) {
+          queryParams.limit = params.limit;
+        }
+        if (mode === 'city' && currentCityId) {
+          queryParams.city_id = currentCityId;
+        }
+        
+        const response = await queriesAPI.executeQuery(queryId, queryParams);
+        setResults(response.data);
       }
-      if (queryId === 4 || queryId === 9) {
-        queryParams.hours = params.hours;
-      }
-      if (queryId !== 3 && queryId !== 4 && queryId !== 9) {
-        queryParams.limit = params.limit;
-      }
-      
-      const response = await queriesAPI.executeQuery(queryId, queryParams);
-      setResults(response.data);
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to execute query');
       console.error(err);
@@ -838,12 +1111,13 @@ function MongoDBQueries() {
 
   const basicQueries = queries.filter(q => q.type === 'basic');
   const advancedQueries = queries.filter(q => q.type === 'advanced');
+  const crudQueries = queries.filter(q => q.type === 'crud');
 
   return (
     <div className="viz-section mongodb-queries">
       <div className="section-header">
         <h3><Database size={20} /> MongoDB Queries</h3>
-        <p>Execute and explore the 10 meaningful MongoDB queries</p>
+        <p>Execute READ queries (1-10) and CRUD operations (11-15) on MongoDB Atlas</p>
       </div>
 
       <div className="queries-layout">
@@ -851,7 +1125,7 @@ function MongoDBQueries() {
           <h4>Available Queries</h4>
           
           <div className="query-group">
-            <h5>Basic Queries (3)</h5>
+            <h5>READ - Basic (3)</h5>
             {basicQueries.map(query => (
               <div
                 key={query.id}
@@ -868,7 +1142,7 @@ function MongoDBQueries() {
           </div>
 
           <div className="query-group">
-            <h5>Advanced Queries (7)</h5>
+            <h5>READ - Advanced (7)</h5>
             {advancedQueries.map(query => (
               <div
                 key={query.id}
@@ -876,6 +1150,23 @@ function MongoDBQueries() {
                 onClick={() => setSelectedQuery(query)}
               >
                 <div className="query-number">{query.id}</div>
+                <div className="query-info">
+                  <div className="query-name">{query.name}</div>
+                  <div className="query-desc">{query.description}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="query-group crud-group">
+            <h5>CRUD Operations (5)</h5>
+            {crudQueries.map(query => (
+              <div
+                key={query.id}
+                className={`query-item crud ${selectedQuery?.id === query.id ? 'active' : ''} ${query.operation}`}
+                onClick={() => setSelectedQuery(query)}
+              >
+                <div className={`query-number ${query.operation}`}>{query.id}</div>
                 <div className="query-info">
                   <div className="query-name">{query.name}</div>
                   <div className="query-desc">{query.description}</div>
@@ -897,17 +1188,36 @@ function MongoDBQueries() {
                     <span>Type: {selectedQuery.type}</span>
                   </div>
                 </div>
-                <button
-                  className="execute-btn"
-                  onClick={() => executeQuery(selectedQuery.id)}
-                  disabled={loading}
-                >
-                  {loading ? <Loader size={18} className="spin" /> : <PlayCircle size={18} />}
-                  Execute Query
-                </button>
+                <div className="query-actions">
+                  <button
+                    className="code-toggle-btn"
+                    onClick={() => setShowCode(!showCode)}
+                  >
+                    <Code size={18} />
+                    {showCode ? 'Hide Code' : 'Show Code'}
+                  </button>
+                  <button
+                    className="execute-btn"
+                    onClick={() => executeQuery(selectedQuery.id)}
+                    disabled={loading}
+                  >
+                    {loading ? <Loader size={18} className="spin" /> : <PlayCircle size={18} />}
+                    Execute Query
+                  </button>
+                </div>
               </div>
 
-              {(selectedQuery.id === 3 || selectedQuery.id === 4) && (
+              {showCode && QUERY_CODES[selectedQuery.id] && (
+                <div className="query-code-display">
+                  <div className="code-header">
+                    <span><Code size={14} /> MongoDB Query Code</span>
+                  </div>
+                  <pre>{QUERY_CODES[selectedQuery.id]}</pre>
+                </div>
+              )}
+
+              {/* READ query params (1-10) */}
+              {(selectedQuery.id === 3 || selectedQuery.id === 4) && selectedQuery.id <= 10 && (
                 <div className="query-params">
                   <label>
                     Zone ID:
@@ -934,7 +1244,7 @@ function MongoDBQueries() {
                   </label>
                 </div>
               )}
-              {selectedQuery.id !== 3 && selectedQuery.id !== 4 && selectedQuery.id !== 9 && (
+              {selectedQuery.id <= 10 && selectedQuery.id !== 3 && selectedQuery.id !== 4 && selectedQuery.id !== 9 && (
                 <div className="query-params">
                   <label>
                     Limit:
@@ -949,6 +1259,115 @@ function MongoDBQueries() {
                 </div>
               )}
 
+              {/* CRUD query forms (11-15) */}
+              {selectedQuery.id === 11 && (
+                <div className="crud-form">
+                  <h5>INSERT Meter Reading</h5>
+                  <div className="crud-form-grid">
+                    <label>
+                      Zone ID:
+                      <input type="text" value={crudForm.zone_id} onChange={(e) => setCrudForm({...crudForm, zone_id: e.target.value})} />
+                    </label>
+                    <label>
+                      Household ID:
+                      <input type="text" value={crudForm.household_id} onChange={(e) => setCrudForm({...crudForm, household_id: e.target.value})} />
+                    </label>
+                    <label>
+                      kWh (Energy):
+                      <input type="number" step="0.1" value={crudForm.kwh} onChange={(e) => setCrudForm({...crudForm, kwh: e.target.value})} />
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {selectedQuery.id === 12 && (
+                <div className="crud-form">
+                  <h5>UPDATE Meter Reading</h5>
+                  <div className="crud-form-grid">
+                    <label>
+                      Zone ID:
+                      <input type="text" value={crudForm.zone_id} onChange={(e) => setCrudForm({...crudForm, zone_id: e.target.value})} />
+                    </label>
+                    <label>
+                      Household ID (optional):
+                      <input type="text" value={crudForm.household_id} onChange={(e) => setCrudForm({...crudForm, household_id: e.target.value})} />
+                    </label>
+                    <label>
+                      New kWh Value:
+                      <input type="number" step="0.1" value={crudForm.new_kwh} onChange={(e) => setCrudForm({...crudForm, new_kwh: e.target.value})} />
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {selectedQuery.id === 13 && (
+                <div className="crud-form">
+                  <h5>INSERT AQI Reading</h5>
+                  <div className="crud-form-grid">
+                    <label>
+                      Zone ID:
+                      <input type="text" value={crudForm.zone_id} onChange={(e) => setCrudForm({...crudForm, zone_id: e.target.value})} />
+                    </label>
+                    <label>
+                      AQI Value:
+                      <input type="number" value={crudForm.aqi} onChange={(e) => setCrudForm({...crudForm, aqi: e.target.value})} />
+                    </label>
+                    <label>
+                      Temperature (°C):
+                      <input type="number" step="0.1" value={crudForm.temperature_c} onChange={(e) => setCrudForm({...crudForm, temperature_c: e.target.value})} />
+                    </label>
+                    <label>
+                      Humidity (%):
+                      <input type="number" value={crudForm.humidity} onChange={(e) => setCrudForm({...crudForm, humidity: e.target.value})} />
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {selectedQuery.id === 14 && (
+                <div className="crud-form">
+                  <h5>UPDATE AQI Reading</h5>
+                  <div className="crud-form-grid">
+                    <label>
+                      Zone ID:
+                      <input type="text" value={crudForm.zone_id} onChange={(e) => setCrudForm({...crudForm, zone_id: e.target.value})} />
+                    </label>
+                    <label>
+                      New AQI Value:
+                      <input type="number" value={crudForm.new_aqi} onChange={(e) => setCrudForm({...crudForm, new_aqi: e.target.value})} />
+                    </label>
+                    <label>
+                      New Temperature (°C):
+                      <input type="number" step="0.1" value={crudForm.new_temperature_c} onChange={(e) => setCrudForm({...crudForm, new_temperature_c: e.target.value})} />
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {selectedQuery.id === 15 && (
+                <div className="crud-form">
+                  <h5>DELETE Old Readings</h5>
+                  <div className="crud-form-grid">
+                    <label>
+                      Collection:
+                      <select value={crudForm.collection} onChange={(e) => setCrudForm({...crudForm, collection: e.target.value})}>
+                        <option value="meter_readings">meter_readings (Energy)</option>
+                        <option value="air_climate_readings">air_climate_readings (AQI)</option>
+                      </select>
+                    </label>
+                    <label>
+                      Zone ID (optional):
+                      <input type="text" value={crudForm.zone_id} onChange={(e) => setCrudForm({...crudForm, zone_id: e.target.value})} />
+                    </label>
+                    <label>
+                      Delete older than (hours):
+                      <input type="number" value={crudForm.hours_old} onChange={(e) => setCrudForm({...crudForm, hours_old: e.target.value})} />
+                    </label>
+                  </div>
+                  <p className="crud-warning">⚠️ This will permanently delete data from MongoDB Atlas!</p>
+                </div>
+              )}
+
               {error && (
                 <div className="query-error">
                   <AlertTriangle size={18} />
@@ -957,13 +1376,19 @@ function MongoDBQueries() {
               )}
 
               {results && (
-                <div className="query-results">
+                <div className={`query-results ${results.success ? 'success' : ''}`}>
                   <div className="results-header">
-                    <h5>Results</h5>
-                    <span className="results-count">{results.count || 0} records</span>
+                    <h5>{results.success ? '✓ Operation Successful' : 'Results'}</h5>
+                    <span className="results-count">
+                      {results.count !== undefined ? `${results.count} records` : 
+                       results.success ? results.operation?.toUpperCase() : ''}
+                    </span>
                   </div>
+                  {results.message && (
+                    <div className="results-message">{results.message}</div>
+                  )}
                   <div className="results-content">
-                    <pre>{JSON.stringify(results.results || results, null, 2)}</pre>
+                    <pre>{JSON.stringify(results.results || results.document || results, null, 2)}</pre>
                   </div>
                 </div>
               )}
@@ -1098,6 +1523,54 @@ function MongoDBQueries() {
           opacity: 0.6;
           cursor: not-allowed;
         }
+        .query-actions {
+          display: flex;
+          gap: 0.75rem;
+        }
+        .code-toggle-btn {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.75rem 1rem;
+          background: var(--bg-secondary);
+          color: var(--text-secondary);
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .code-toggle-btn:hover {
+          border-color: var(--accent-secondary);
+          color: var(--accent-secondary);
+        }
+        .query-code-display {
+          background: #0a0a0f;
+          border: 1px solid var(--border-color);
+          border-radius: 8px;
+          margin-bottom: 1.5rem;
+          overflow: hidden;
+        }
+        .query-code-display .code-header {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.75rem 1rem;
+          background: var(--bg-secondary);
+          border-bottom: 1px solid var(--border-color);
+          font-size: 0.8rem;
+          color: var(--text-muted);
+        }
+        .query-code-display pre {
+          margin: 0;
+          padding: 1rem;
+          font-family: var(--font-mono);
+          font-size: 0.85rem;
+          line-height: 1.6;
+          color: #00ff88;
+          overflow-x: auto;
+          white-space: pre-wrap;
+        }
         .query-params {
           margin-bottom: 1rem;
         }
@@ -1165,6 +1638,94 @@ function MongoDBQueries() {
         .no-query-selected p {
           margin-top: 1rem;
         }
+        /* CRUD Styles */
+        .crud-group h5 {
+          color: var(--accent-warning) !important;
+        }
+        .query-item.crud {
+          border-color: rgba(255, 170, 0, 0.3);
+        }
+        .query-item.crud:hover {
+          border-color: var(--accent-warning);
+          background: rgba(255, 170, 0, 0.05);
+        }
+        .query-item.crud.active {
+          border-color: var(--accent-warning);
+          background: rgba(255, 170, 0, 0.1);
+        }
+        .query-number.insert {
+          background: var(--accent-primary);
+        }
+        .query-number.update {
+          background: var(--accent-secondary);
+        }
+        .query-number.delete {
+          background: var(--accent-danger);
+        }
+        .crud-form {
+          background: rgba(255, 170, 0, 0.05);
+          border: 1px solid rgba(255, 170, 0, 0.3);
+          border-radius: 8px;
+          padding: 1.25rem;
+          margin-bottom: 1.5rem;
+        }
+        .crud-form h5 {
+          margin: 0 0 1rem 0;
+          color: var(--accent-warning);
+          font-size: 1rem;
+        }
+        .crud-form-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          gap: 1rem;
+        }
+        .crud-form label {
+          display: flex;
+          flex-direction: column;
+          gap: 0.35rem;
+          font-size: 0.85rem;
+          color: var(--text-secondary);
+        }
+        .crud-form input,
+        .crud-form select {
+          padding: 0.6rem 0.75rem;
+          border: 1px solid var(--border-color);
+          border-radius: 6px;
+          background: var(--bg-secondary);
+          color: var(--text-primary);
+          font-family: var(--font-mono);
+          font-size: 0.9rem;
+        }
+        .crud-form input:focus,
+        .crud-form select:focus {
+          outline: none;
+          border-color: var(--accent-warning);
+        }
+        .crud-warning {
+          margin-top: 1rem;
+          padding: 0.75rem;
+          background: rgba(255, 68, 102, 0.1);
+          border-radius: 6px;
+          font-size: 0.85rem;
+          color: var(--accent-danger);
+        }
+        .query-results.success {
+          border: 1px solid var(--accent-primary);
+          border-radius: 8px;
+          padding: 1rem;
+          background: rgba(0, 255, 136, 0.05);
+        }
+        .query-results.success .results-header h5 {
+          color: var(--accent-primary);
+        }
+        .results-message {
+          padding: 0.75rem 1rem;
+          background: rgba(0, 255, 136, 0.1);
+          border-radius: 6px;
+          margin-bottom: 1rem;
+          font-size: 0.9rem;
+          color: var(--accent-primary);
+        }
         .spin {
           animation: spin 1s linear infinite;
         }
@@ -1184,15 +1745,24 @@ function MongoDBQueries() {
 
 // ==================== MAIN COMPONENT ====================
 export default function AdvancedViz() {
+  const { mode } = useAppMode();
   const [activeTab, setActiveTab] = useState('recovery');
 
+  // MongoDB Queries tab is only available in Simulated mode
   const tabs = [
     { id: 'recovery', label: 'Recovery Timeline', icon: Clock },
     { id: 'heatmap', label: 'Heatmap', icon: Map },
     { id: 'comparison', label: 'Zone Compare', icon: GitCompare },
     { id: 'network', label: 'Network Flow', icon: Network },
-    { id: 'queries', label: 'MongoDB Queries', icon: Database },
+    ...(mode === 'sim' ? [{ id: 'queries', label: 'MongoDB Queries', icon: Database }] : []),
   ];
+
+  // If user was on queries tab and switched to city mode, reset to recovery
+  useEffect(() => {
+    if (mode === 'city' && activeTab === 'queries') {
+      setActiveTab('recovery');
+    }
+  }, [mode, activeTab]);
 
   return (
     <div className="advanced-viz-page container page">
@@ -1203,6 +1773,10 @@ export default function AdvancedViz() {
       >
         <h1><Activity size={32} /> Advanced Visualizations</h1>
         <p>Interactive data visualizations for in-depth analysis</p>
+        <div className="viz-disclaimer">
+          <Info size={16} />
+          <span><strong>Recovery Timeline</strong> uses scenario-based demos (heatwave, flood, etc.). <strong>Heatmap</strong>, <strong>Zone Compare</strong>, and <strong>Network Flow</strong> use live data (processed_zone_data / Analytics API). Select a city and run processing to see dynamic data there.</span>
+        </div>
       </motion.div>
 
       <div className="tab-nav">
@@ -1223,7 +1797,7 @@ export default function AdvancedViz() {
         {activeTab === 'heatmap' && <HeatmapOverlay />}
         {activeTab === 'comparison' && <ZoneComparison />}
         {activeTab === 'network' && <NetworkFlow />}
-        {activeTab === 'queries' && <MongoDBQueries />}
+        {activeTab === 'queries' && mode === 'sim' && <MongoDBQueries />}
       </div>
 
       <style>{`
@@ -1241,6 +1815,20 @@ export default function AdvancedViz() {
         .page-header p {
           color: var(--text-secondary);
         }
+
+        .viz-disclaimer {
+          display: flex;
+          align-items: flex-start;
+          gap: 0.5rem;
+          margin-top: 1rem;
+          padding: 0.75rem 1rem;
+          background: rgba(0, 212, 255, 0.08);
+          border: 1px solid rgba(0, 212, 255, 0.25);
+          border-radius: 8px;
+          font-size: 0.85rem;
+          color: var(--text-secondary);
+        }
+        .viz-disclaimer svg { flex-shrink: 0; color: var(--accent-secondary); margin-top: 2px; }
 
         .tab-nav {
           display: flex;

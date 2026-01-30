@@ -1,9 +1,10 @@
-import { BrowserRouter as Router, Routes, Route, useLocation, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import TronBackground from './components/TronBackground';
 import Home from './pages/Home';
 import Data from './pages/Data';
 import Analytics from './pages/Analytics';
+import TFT from './pages/TFT';
 import LSTM from './pages/LSTM';
 import Autoencoder from './pages/Autoencoder';
 import GNN from './pages/GNN';
@@ -18,31 +19,12 @@ import AdvancedAnalytics from './pages/AdvancedAnalytics';
 import AIRecommendations from './pages/AIRecommendations';
 import Guide from './pages/Guide';
 import IncidentReports from './pages/IncidentReports';
-import CitySelect from './pages/CitySelect';
 import AdminQueries from './pages/AdminQueries';
-import { useAppMode } from './utils/useAppMode';
-import WhatIf from './pages/WhatIf';
-
+import AdminData from './pages/AdminData';
+import Cost from './pages/Cost';
+import LiveStream from './pages/LiveStream';
 function AppLayout() {
-  const location = useLocation();
-  const { mode } = useAppMode();
-  const isSelectCity = location.pathname === '/select-city';
-  const hasCity = typeof sessionStorage !== 'undefined' && sessionStorage.getItem('city_selected');
-
-  if (isSelectCity) {
-    return (
-      <div className="app">
-        <TronBackground />
-        <CitySelect />
-      </div>
-    );
-  }
-
-  // In SIM mode, we don't require selecting a real city first.
-  if (mode !== 'sim' && !hasCity) {
-    return <Navigate to="/select-city" replace />;
-  }
-
+  // Main app first: always Home + Navbar. City select/change via dropdown + processing popup.
   return (
     <div className="app">
       <TronBackground />
@@ -50,11 +32,13 @@ function AppLayout() {
       <main className="main-content">
         <Routes>
           <Route path="/" element={<Home />} />
+          <Route path="/select-city" element={<Navigate to="/" replace />} />
           <Route path="/citymap" element={<CityMap />} />
           <Route path="/simulation" element={<Simulation />} />
           <Route path="/simulation3d" element={<Simulation3D />} />
           <Route path="/data" element={<Data />} />
           <Route path="/analytics" element={<Analytics />} />
+          <Route path="/tft" element={<TFT />} />
           <Route path="/lstm" element={<LSTM />} />
           <Route path="/autoencoder" element={<Autoencoder />} />
           <Route path="/gnn" element={<GNN />} />
@@ -66,8 +50,10 @@ function AppLayout() {
           <Route path="/ai-recommendations" element={<AIRecommendations />} />
           <Route path="/guide" element={<Guide />} />
           <Route path="/incidents" element={<IncidentReports />} />
-          <Route path="/whatif" element={<WhatIf />} />
+          <Route path="/cost" element={<Cost />} />
+          <Route path="/live-stream" element={<LiveStream />} />
           <Route path="/admin/queries" element={<AdminQueries />} />
+          <Route path="/admin/data" element={<AdminData />} />
         </Routes>
       </main>
     </div>

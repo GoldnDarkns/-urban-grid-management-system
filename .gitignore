@@ -62,6 +62,11 @@ dmypy.json
 data/household_power_consumption.txt
 data/station_hour.csv
 data/city_hour.csv
+data/Kaggle_Aqi_Downloaded.csv
+data/*.xlsx
+data/*.xls
+data/2023.csv.gz
+data/kaggle_aqi.csv
 
 # Large model files (exceed GitHub's 100MB limit)
 src/models/transformer_incident_model/model.safetensors

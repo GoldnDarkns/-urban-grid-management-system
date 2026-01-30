@@ -19,6 +19,7 @@ export default function AIRecommendations() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
+  const [errorSuggestion, setErrorSuggestion] = useState(null);
   const [selectedRec, setSelectedRec] = useState(null);
   const [currentCityId, setCurrentCityId] = useState(null);
   const { formatZoneName, formatZoneNames, getZone } = useZones();
@@ -54,22 +55,149 @@ export default function AIRecommendations() {
     fetchRecommendations();
   }, [mode, currentCityId]);
 
+  const tryParseRawRecommendations = (rawResponse) => {
+    if (!rawResponse) return null;
+    
+    // If raw_response is already an array, return it directly
+    if (Array.isArray(rawResponse)) {
+      return rawResponse.length > 0 ? rawResponse : null;
+    }
+    
+    // If raw_response is already an object with recommendations
+    if (typeof rawResponse === 'object' && rawResponse !== null) {
+      if (rawResponse.recommendations) {
+        return Array.isArray(rawResponse.recommendations) ? rawResponse.recommendations : [rawResponse.recommendations];
+      }
+      if (rawResponse.priority !== undefined || rawResponse.action_type) {
+        return [rawResponse];
+      }
+    }
+    
+    // If it's a string, try to parse it
+    if (typeof rawResponse !== 'string') return null;
+    
+    let text = rawResponse.trim();
+    
+    // Remove markdown code blocks if present
+    if (text.includes('```json')) {
+      const parts = text.split('```json');
+      if (parts[1]) text = parts[1].split('```')[0].trim();
+    } else if (text.includes('```')) {
+      const parts = text.split('```');
+      if (parts[1]) text = parts[1].split('```')[0].trim();
+    }
+    if (!text) return null;
+    
+    // Find JSON start if there's leading text
+    if (!(text.startsWith('[') || text.startsWith('{'))) {
+      const startBracket = text.indexOf('[');
+      const startBrace = text.indexOf('{');
+      const start = startBracket === -1 ? startBrace : (startBrace === -1 ? startBracket : Math.min(startBracket, startBrace));
+      if (start !== -1) {
+        text = text.slice(start);
+      }
+    }
+    
+    // Try to fix truncated JSON - find last complete object in array
+    const fixTruncatedJson = (jsonStr) => {
+      if (!jsonStr.startsWith('[')) return jsonStr;
+      
+      // Find all complete objects (matching { and })
+      let depth = 0;
+      let lastCompleteEnd = -1;
+      let inString = false;
+      let escape = false;
+      
+      for (let i = 0; i < jsonStr.length; i++) {
+        const char = jsonStr[i];
+        
+        if (escape) { escape = false; continue; }
+        if (char === '\\') { escape = true; continue; }
+        if (char === '"' && !escape) { inString = !inString; continue; }
+        if (inString) continue;
+        
+        if (char === '{') depth++;
+        else if (char === '}') {
+          depth--;
+          if (depth === 0) lastCompleteEnd = i;
+        }
+      }
+      
+      // If we found complete objects, truncate after the last one and close array
+      if (lastCompleteEnd > 0 && depth > 0) {
+        return jsonStr.slice(0, lastCompleteEnd + 1) + ']';
+      }
+      
+      return jsonStr;
+    };
+    
+    // First try parsing as-is
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && parsed.recommendations) return Array.isArray(parsed.recommendations) ? parsed.recommendations : [parsed.recommendations];
+      if (parsed && typeof parsed === 'object') return [parsed];
+      return null;
+    } catch (e) {
+      // Try fixing truncated JSON
+      try {
+        const fixed = fixTruncatedJson(text);
+        const parsed = JSON.parse(fixed);
+        console.log('Parsed truncated JSON, got', Array.isArray(parsed) ? parsed.length : 1, 'recommendations');
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed && typeof parsed === 'object') return [parsed];
+      } catch (e2) {
+        console.error('Failed to parse even after fixing:', e2.message);
+      }
+      return null;
+    }
+  };
+
   const fetchRecommendations = async () => {
     setLoading(true);
     setError(null);
     try {
       const response = await aiAPI.getRecommendations(mode === 'city' ? currentCityId : null);
+      console.log('AI API response:', response.data);
+      
+      // First, try to use recommendations if they exist and are non-empty
+      if (response.data.recommendations && response.data.recommendations.length > 0) {
+        setRecommendations(response.data.recommendations);
+        setSystemState(response.data.system_state || null);
+        setError(null);
+        setErrorSuggestion(null);
+        return;
+      }
+      
+      // If there's an error but also raw_response, try to parse it
+      if (response.data.error && response.data.raw_response) {
+        console.log('Attempting to parse raw_response...');
+        const parsed = tryParseRawRecommendations(response.data.raw_response);
+        if (parsed && parsed.length > 0) {
+          console.log('Successfully parsed', parsed.length, 'recommendations from raw_response');
+          setRecommendations(parsed);
+          setSystemState(response.data.system_state || null);
+          setError(null);
+          setErrorSuggestion(null);
+          return;
+        }
+        console.log('Failed to parse raw_response');
+      }
+      
+      // If there's an error, show it
       if (response.data.error) {
         setError(response.data.error);
-        if (response.data.raw_response) {
-          console.log('Raw AI response:', response.data.raw_response);
-        }
+        setErrorSuggestion(response.data.suggestion || null);
+        if (response.data.raw_response) console.log('Raw AI response:', response.data.raw_response);
       } else {
-        setRecommendations(response.data.recommendations || []);
+        // No error but also no recommendations
+        setErrorSuggestion(null);
+        setRecommendations([]);
         setSystemState(response.data.system_state);
       }
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to fetch AI recommendations');
+      setErrorSuggestion(err.response?.data?.suggestion || null);
       console.error('Error fetching recommendations:', err);
     } finally {
       setLoading(false);
@@ -170,7 +298,12 @@ export default function AIRecommendations() {
           <AlertTriangle size={20} />
           <div>
             <strong>Error:</strong> {error}
-            {error.includes('JSON') && (
+            {errorSuggestion && (
+              <p style={{ marginTop: '0.5rem', fontSize: '0.875rem', opacity: 0.95 }}>
+                {errorSuggestion}
+              </p>
+            )}
+            {error.includes('JSON') && !errorSuggestion && (
               <p style={{ marginTop: '0.5rem', fontSize: '0.875rem' }}>
                 The AI response couldn't be parsed. Check console for raw response.
               </p>
@@ -443,13 +576,13 @@ export default function AIRecommendations() {
                           {rec.ml_models_used && (
                             <div className="detail-section">
                               <h5>ML Models Used</h5>
-                              <p>{rec.ml_models_used}</p>
+                              <p>{Array.isArray(rec.ml_models_used) ? rec.ml_models_used.join(', ') : rec.ml_models_used}</p>
                             </div>
                           )}
                           {rec.data_sources && (
                             <div className="detail-section">
                               <h5>Data Sources</h5>
-                              <p>{rec.data_sources}</p>
+                              <p>{Array.isArray(rec.data_sources) ? rec.data_sources.join(', ') : rec.data_sources}</p>
                             </div>
                           )}
                         </div>

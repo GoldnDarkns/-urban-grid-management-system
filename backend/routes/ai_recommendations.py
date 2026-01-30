@@ -10,16 +10,26 @@ import requests
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from backend.routes.data import safe_get_db
+from backend.routes.data import safe_get_db, safe_get_db_mode, _get_mode
 from backend.routes.analytics import safe_get_db as analytics_safe_get_db
 from backend.routes.models import get_models_overview
+from backend.services.cost_service import compute_costs
+from fastapi import Request, Query
+from typing import Optional
 import json
 
-router = APIRouter(prefix="/api/ai", tags=["AI Recommendations"])
+router = APIRouter(tags=["AI Recommendations"])
 
-# OpenRouter API Key
-OPENROUTER_API_KEY = "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"
-OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
+# OpenRouter: use env so you can set a new key without editing code
+# 402 = insufficient credits (not an invalid key). Add credits at https://openrouter.ai/settings/credits or lower OPENROUTER_MAX_TOKENS.
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+OPENROUTER_API_URL = os.getenv("OPENROUTER_API_URL", "https://openrouter.ai/api/v1/chat/completions")
+OPENROUTER_MAX_TOKENS = int(os.getenv("OPENROUTER_MAX_TOKENS", "512"))  # Lower = fewer credits per request (e.g. 256 if tight)
+
+# Mistral: fallback when OpenRouter fails (same OpenAI-compatible chat format)
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
+MISTRAL_API_URL = os.getenv("MISTRAL_API_URL", "https://api.mistral.ai/v1/chat/completions")
+MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
 
 # Model to use (OpenRouter supports multiple models)
 # Options: "openai/gpt-3.5-turbo", "openai/gpt-4", "anthropic/claude-3-haiku", etc.
@@ -46,7 +56,7 @@ DOMAIN KNOWLEDGE (PROJECT-SPECIFIC):
   * population_est (estimated residents)
 - Risk Levels: Low (<30), Medium (30-60), High (>60)
 - ML Models in this system:
-  * LSTM: Forecasts energy demand (next hour). RMSE: 64.27, R²: 0.64
+  * TFT: Primary demand forecasting (interpretable multi-horizon). LSTM kept for comparison (RMSE: 64.27, R²: 0.64)
   * ARIMA: Statistical demand forecasting. RMSE: 88.82, R²: 0.5352
   * Prophet: Seasonal forecasting (BEST). RMSE: 48.41, R²: 0.8619
   * Autoencoder: Detects consumption anomalies (threshold: 0.026, anomaly rate: 5.33%)
@@ -89,9 +99,9 @@ Provide recommendations as JSON with:
 """
 
 
-def compile_system_state() -> Dict[str, Any]:
+def compile_system_state(mode: str = "sim", city_id: Optional[str] = None) -> Dict[str, Any]:
     """Compile all ML model outputs and current system state."""
-    db = safe_get_db()
+    db = safe_get_db_mode(mode)
     if db is None:
         return {"error": "Database connection failed"}
     
@@ -103,7 +113,8 @@ def compile_system_state() -> Dict[str, Any]:
         "anomalies": [],
         "demand_forecast": {},
         "aqi_status": {},
-        "constraint_events": []
+        "constraint_events": [],
+        "costs": None,
     }
     
     try:
@@ -123,9 +134,28 @@ def compile_system_state() -> Dict[str, Any]:
         
         # Get zone risk scores
         try:
-            db = safe_get_db()
-            if db is not None:
-                # Direct query instead of calling route
+            if mode == "city" and city_id:
+                # CITY MODE: Use processed_zone_data
+                query = {"city_id": city_id}
+                processed_zones = list(db.processed_zone_data.find(query).sort("timestamp", -1).limit(100))
+                risk_scores = []
+                for zone in processed_zones:
+                    ml = zone.get("ml_processed", {})
+                    risk = ml.get("risk_score", {})
+                    raw = zone.get("raw_data", {})
+                    risk_scores.append({
+                        "zone_id": zone.get("zone_id"),
+                        "zone_name": zone.get("zone_id", "").replace("_", " ").upper(),
+                        "risk_score": risk.get("score", 0),
+                        "risk_level": risk.get("level", "low"),
+                        "grid_priority": zone.get("grid_priority", 1),
+                        "critical_sites": zone.get("critical_sites", []),
+                        "aqi": {"avg_aqi": raw.get("aqi", {}).get("aqi", 0)} if raw.get("aqi") else None,
+                        "demand": {"max_kwh": ml.get("demand_forecast", {}).get("next_hour_kwh", 0)} if ml.get("demand_forecast") else None
+                    })
+                state["zone_risk"] = risk_scores
+            else:
+                # SIM MODE: Use original logic
                 zones = list(db.zones.find())
                 cutoff = datetime.utcnow() - timedelta(hours=24)
                 risk_scores = []
@@ -187,8 +217,23 @@ def compile_system_state() -> Dict[str, Any]:
         
         # Get anomalies
         try:
-            db = safe_get_db()
-            if db is not None:
+            if mode == "city" and city_id:
+                # CITY MODE: Use processed_zone_data anomaly_detection
+                query = {"city_id": city_id}
+                processed_zones = list(db.processed_zone_data.find(query).sort("timestamp", -1).limit(100))
+                anomalies = []
+                for zone in processed_zones:
+                    anomaly = zone.get("ml_processed", {}).get("anomaly_detection", {})
+                    if anomaly.get("is_anomaly"):
+                        anomalies.append({
+                            "zone_id": zone.get("zone_id"),
+                            "anomaly_score": round(anomaly.get("anomaly_score", 0), 3),
+                            "current_demand": round(anomaly.get("current_demand", 0), 2),
+                            "threshold": round(anomaly.get("threshold", 0), 2)
+                        })
+                state["anomalies"] = anomalies[:20]
+            else:
+                # SIM MODE: Use original logic
                 households = {h["_id"]: h for h in db.households.find()}
                 recent_readings = list(db.meter_readings.find().sort("ts", -1).limit(5000))
                 anomalies = []
@@ -209,11 +254,27 @@ def compile_system_state() -> Dict[str, Any]:
             print(f"Error getting anomalies: {e}")
             state["anomalies"] = []
         
-        # Get demand forecast (LSTM prediction)
+        # Get demand forecast (TFT primary; LSTM comparison)
         try:
-            # Get recent demand data for forecast context
-            db = safe_get_db()
-            if db is not None:
+            if mode == "city" and city_id:
+                # CITY MODE: Use processed_zone_data demand_forecast
+                query = {"city_id": city_id}
+                processed_zones = list(db.processed_zone_data.find(query).sort("timestamp", -1).limit(100))
+                total_demand = 0
+                forecasts = []
+                for zone in processed_zones:
+                    forecast = zone.get("ml_processed", {}).get("demand_forecast", {})
+                    if forecast.get("next_hour_kwh"):
+                        total_demand += forecast["next_hour_kwh"]
+                        forecasts.append(forecast["next_hour_kwh"])
+                state["demand_forecast"] = {
+                    "recent_24h_demand": round(total_demand, 2),
+                    "avg_hourly_demand": round(total_demand / max(len(forecasts), 1), 2),
+                    "forecast_available": len(forecasts) > 0,
+                    "zones_with_forecast": len(forecasts)
+                }
+            else:
+                # SIM MODE: Use original logic
                 recent_demand = list(db.meter_readings.find().sort("ts", -1).limit(24))
                 total_demand = sum(r["kwh"] for r in recent_demand)
                 state["demand_forecast"] = {
@@ -275,6 +336,13 @@ def compile_system_state() -> Dict[str, Any]:
                 state["constraint_events"] = []
         except Exception as e:
             print(f"Error getting constraint events: {e}")
+
+        # Cost summary (City mode): energy + CO2 from processed data + EIA price
+        try:
+            if mode == "city" and city_id:
+                state["costs"] = compute_costs(city_id)
+        except Exception as e:
+            print(f"Error computing costs: {e}")
         
     except Exception as e:
         print(f"Error compiling system state: {e}")
@@ -313,14 +381,22 @@ async def list_available_models():
 
 
 @router.get("/recommendations")
-async def get_ai_recommendations():
+async def get_ai_recommendations(request: Request, city_id: Optional[str] = Query(None)):
     """Get AI-powered recommendations based on all ML model outputs."""
     try:
-        # Compile current system state
-        system_state = compile_system_state()
+        # Get mode from request
+        mode = _get_mode(request)
+        # Compile current system state with mode and city_id
+        system_state = compile_system_state(mode=mode, city_id=city_id)
         
         if "error" in system_state:
             return {"error": system_state["error"], "recommendations": []}
+        if not (OPENROUTER_API_KEY and OPENROUTER_API_KEY.strip()) and not (MISTRAL_API_KEY and MISTRAL_API_KEY.strip()):
+            return {
+                "error": "No AI API key set. Set OPENROUTER_API_KEY or MISTRAL_API_KEY in .env (or in Docker env) and restart the backend.",
+                "recommendations": [],
+                "suggestion": "Get OpenRouter at https://openrouter.ai or Mistral at https://console.mistral.ai and add the key to .env"
+            }
         
         # Prepare prompt for OpenRouter LLM
         user_prompt = f"""
@@ -334,6 +410,7 @@ Based on this data, provide 5-10 prioritized recommendations. Consider:
 - What do the ML models predict?
 - Are there anomalies that need attention?
 - What actions will balance demand, emissions, and reliability?
+- If "costs" is present (energy_usd, co2_usd, aqi_usd, incident_usd, total_usd, price_per_kwh, incident_count): use it to inform cost_estimate (e.g. "~$X savings", "Low/Medium/High cost", AQI/311 incident impact).
 
 Return recommendations as a JSON array with this structure:
 [
@@ -351,7 +428,7 @@ Return recommendations as a JSON array with this structure:
     "implementation_steps": ["Step 1: Describe first action", "Step 2: Describe second action", "Step 3: Describe third action"],
     "risks": "Potential risks or side effects of implementing this recommendation",
     "timeline": "Estimated time to implement (e.g., '2-4 hours', '1-2 days', '1 week')",
-    "ml_models_used": "Which ML models contributed to this recommendation (e.g., 'LSTM demand forecast, GNN risk assessment')",
+    "ml_models_used": "Which ML models contributed to this recommendation (e.g., 'TFT demand forecast, GNN risk assessment')",
     "data_sources": "Key data sources that informed this recommendation (e.g., 'Recent demand spikes, AQI violations, anomaly detections')"
   }}
 ]
@@ -359,15 +436,7 @@ Return recommendations as a JSON array with this structure:
 Only return valid JSON, no additional text.
 """
         
-        # Call OpenRouter API (unified API for multiple LLMs)
-        # OpenRouter uses OpenAI-compatible format
-        headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://urbangrid.system",  # Optional: for analytics
-            "X-Title": "Urban Grid Management System"  # Optional: for analytics
-        }
-        
+        # Call OpenRouter first; on failure, fall back to Mistral (both use OpenAI-compatible chat format)
         payload = {
             "model": DEFAULT_MODEL,
             "messages": [
@@ -381,50 +450,87 @@ Only return valid JSON, no additional text.
                 }
             ],
             "temperature": 0.7,
-            "max_tokens": 2048,
+            "max_tokens": min(OPENROUTER_MAX_TOKENS, 2048),
             "top_p": 0.9
         }
         
         response_text = None
         last_error = None
-        
-        try:
-            # Call OpenRouter API
-            response = requests.post(
-                OPENROUTER_API_URL,
-                headers=headers,
-                json=payload,
-                timeout=30
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                if 'choices' in result and len(result['choices']) > 0:
-                    response_text = result['choices'][0]['message']['content']
-                else:
-                    raise Exception(f"No choices in response: {result}")
-            else:
-                error_detail = response.text
+        used_fallback = False
+
+        def _call_openrouter():
+            h = {
+                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://urbangrid.system",
+                "X-Title": "Urban Grid Management System"
+            }
+            r = requests.post(OPENROUTER_API_URL, headers=h, json=payload, timeout=30)
+            if r.status_code != 200:
+                err = r.text
                 try:
-                    error_json = response.json()
-                    error_detail = error_json.get('error', {}).get('message', error_detail)
-                except:
+                    err = r.json().get('error', {}).get('message', err)
+                except Exception:
                     pass
-                raise Exception(f"OpenRouter API failed: {response.status_code} - {error_detail}")
-                
-        except Exception as e:
-            last_error = str(e)
-            print(f"OpenRouter API error: {last_error}")
+                if r.status_code == 402:
+                    err = "Insufficient credits (402). Add credits at https://openrouter.ai/settings/credits or use Mistral fallback."
+                raise Exception(f"OpenRouter {r.status_code}: {err}")
+            data = r.json()
+            if 'choices' in data and len(data['choices']) > 0:
+                return data['choices'][0]['message']['content']
+            raise Exception(f"No choices in response: {data}")
+
+        def _call_mistral():
+            h = {
+                "Authorization": f"Bearer {MISTRAL_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            mistral_payload = {
+                "model": MISTRAL_MODEL,
+                "messages": payload["messages"],
+                "temperature": payload["temperature"],
+                "max_tokens": payload["max_tokens"]
+            }
+            r = requests.post(MISTRAL_API_URL, headers=h, json=mistral_payload, timeout=30)
+            if r.status_code != 200:
+                err = r.text
+                try:
+                    err = r.json().get('message', r.json().get('error', err))
+                except Exception:
+                    pass
+                raise Exception(f"Mistral {r.status_code}: {err}")
+            data = r.json()
+            if 'choices' in data and len(data['choices']) > 0:
+                return data['choices'][0]['message']['content']
+            raise Exception(f"No choices in response: {data}")
+
+        # Try OpenRouter first (if key set), then Mistral fallback
+        if OPENROUTER_API_KEY and OPENROUTER_API_KEY.strip():
+            try:
+                response_text = _call_openrouter()
+            except Exception as e:
+                last_error = str(e)
+                print(f"OpenRouter API error: {last_error}")
+        if response_text is None and MISTRAL_API_KEY and MISTRAL_API_KEY.strip():
+            try:
+                response_text = _call_mistral()
+                used_fallback = True
+            except Exception as e:
+                last_error = str(e)
+                print(f"Mistral fallback error: {last_error}")
+
+        if response_text is None:
+            suggestion = "Check OPENROUTER_API_KEY and MISTRAL_API_KEY in .env. If OpenRouter returns 402, add credits or rely on Mistral."
             return {
-                "error": f"OpenRouter API error: {last_error}. Please verify your API key is valid.",
+                "error": f"AI API error: {last_error or 'No provider available'}",
                 "recommendations": [],
-                "suggestion": "Check your OpenRouter API key and account balance"
+                "suggestion": suggestion
             }
         
         # Parse response
         response_text = response_text.strip()
         
-        # Try to extract JSON from response
+        # Try to extract JSON from response (LLM may wrap in text or markdown)
         try:
             # Remove markdown code blocks if present
             if "```json" in response_text:
@@ -432,7 +538,52 @@ Only return valid JSON, no additional text.
             elif "```" in response_text:
                 response_text = response_text.split("```")[1].split("```")[0].strip()
             
-            recommendations = json.loads(response_text)
+            # If there is still leading/trailing text, extract JSON array or object
+            text = response_text
+            if not text.startswith("[") and not text.startswith("{"):
+                start = text.find("[")
+                if start == -1:
+                    start = text.find("{")
+                if start != -1:
+                    end = (text.rfind("]") + 1) if text[start] == "[" else (text.rfind("}") + 1)
+                    if end > start:
+                        text = text[start:end]
+            
+            # Try to fix truncated JSON (common with token limits)
+            def try_fix_truncated_json(json_str):
+                """Attempt to fix truncated JSON by closing open brackets/braces."""
+                if not json_str:
+                    return json_str
+                # Count brackets
+                open_brackets = json_str.count('[') - json_str.count(']')
+                open_braces = json_str.count('{') - json_str.count('}')
+                
+                # If truncated, try to close it
+                if open_brackets > 0 or open_braces > 0:
+                    # Find the last complete object in an array
+                    if json_str.startswith('['):
+                        # Find last complete object (ends with })
+                        last_complete = json_str.rfind('}')
+                        if last_complete > 0:
+                            # Check if there's a comma after it
+                            after = json_str[last_complete+1:].strip()
+                            if after.startswith(',') or after == '':
+                                # Truncate to last complete object and close array
+                                return json_str[:last_complete+1] + ']'
+                    # Generic fix: close remaining brackets/braces
+                    fixed = json_str
+                    fixed += '}' * open_braces
+                    fixed += ']' * open_brackets
+                    return fixed
+                return json_str
+            
+            # First try parsing as-is
+            try:
+                recommendations = json.loads(text)
+            except json.JSONDecodeError:
+                # Try fixing truncated JSON
+                fixed_text = try_fix_truncated_json(text)
+                recommendations = json.loads(fixed_text)
             
             # Ensure it's a list
             if isinstance(recommendations, dict) and "recommendations" in recommendations:
@@ -440,11 +591,14 @@ Only return valid JSON, no additional text.
             elif not isinstance(recommendations, list):
                 recommendations = [recommendations]
             
-            return {
+            out = {
                 "recommendations": recommendations,
                 "system_state": system_state,
                 "generated_at": datetime.now(timezone.utc).isoformat()
             }
+            if used_fallback:
+                out["provider"] = "mistral"
+            return out
         except json.JSONDecodeError as e:
             # If JSON parsing fails, return the raw response with error
             return {

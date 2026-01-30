@@ -10,7 +10,8 @@ import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, 
   Tooltip, ResponsiveContainer, Legend, PieChart as RechartsPieChart, Pie, Cell
 } from 'recharts';
-import { incidentsAPI, dataAPI } from '../services/api';
+import { incidentsAPI, dataAPI, liveAPI, cityAPI } from '../services/api';
+import { useAppMode } from '../utils/useAppMode';
 import CodeBlock from '../components/CodeBlock';
 
 const URGENCY_COLORS = {
@@ -38,7 +39,47 @@ const CATEGORY_ICONS = {
   weather_damage: Wind
 };
 
+function map311ToIncidents(requests) {
+  if (!Array.isArray(requests)) return [];
+  return requests.map((r) => ({
+    id: String(r.request_id || r.id || ''),
+    zone_id: null,
+    zone_name: r.location?.address || '—',
+    description: r.description || r.type || '—',
+    status: (r.status || 'unknown').toLowerCase(),
+    timestamp: r.created_date || new Date().toISOString(),
+    reporter: '311',
+    nlp_analysis: {
+      category: (r.type || 'other').toLowerCase().replace(/\s+/g, '_'),
+      urgency: 'medium',
+      summary: r.description || r.type || '',
+      category_confidence: 0,
+      sentiment: 'neutral',
+      entities: {}
+    },
+    source: r.source || '311'
+  }));
+}
+
+function compute311Summary(incidents) {
+  const total = incidents.length;
+  const statuses = {};
+  const categories = {};
+  const urgencies = { critical: 0, high: 0, medium: 0, low: 0 };
+  incidents.forEach((i) => {
+    const s = (i.status || 'unknown').toLowerCase();
+    statuses[s] = (statuses[s] || 0) + 1;
+    const cat = i.nlp_analysis?.category || 'other';
+    categories[cat] = (categories[cat] || 0) + 1;
+    urgencies[i.nlp_analysis?.urgency || 'medium'] = (urgencies[i.nlp_analysis?.urgency] || 0) + 1;
+  });
+  statuses.resolved = statuses.resolved ?? statuses.closed ?? 0;
+  return { total, statuses, categories, urgencies, sentiments: {} };
+}
+
 export default function IncidentReports() {
+  const { mode } = useAppMode();
+  const [currentCityId, setCurrentCityId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [incidents, setIncidents] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -65,45 +106,76 @@ export default function IncidentReports() {
   });
 
   useEffect(() => {
-    fetchData();
-  }, [filters.days]);
+    if (mode !== 'city') return;
+    cityAPI.getCurrentCity().then((r) => setCurrentCityId(r.data?.city_id || null)).catch(() => setCurrentCityId(null));
+  }, [mode]);
 
-  // Auto-refresh when on NLP tab for live feel
   useEffect(() => {
-    if (activeTab !== 'nlp') return;
+    if (mode !== 'city') return;
+    const onCityChanged = () => {
+      cityAPI.getCurrentCity().then((r) => setCurrentCityId(r.data?.city_id || null)).catch(() => setCurrentCityId(null));
+    };
+    window.addEventListener('ugms-city-changed', onCityChanged);
+    window.addEventListener('ugms-city-processed', onCityChanged);
+    return () => {
+      window.removeEventListener('ugms-city-changed', onCityChanged);
+      window.removeEventListener('ugms-city-processed', onCityChanged);
+    };
+  }, [mode]);
+
+  useEffect(() => {
+    if (mode === 'city' && (activeTab === 'report' || activeTab === 'trends')) {
+      setActiveTab('overview');
+    }
+  }, [mode, activeTab]);
+
+  useEffect(() => {
+    fetchData();
+  }, [filters.days, mode, currentCityId]);
+
+  // Auto-refresh when on NLP tab for live feel (Sim only; City 311 has no NLP)
+  useEffect(() => {
+    if (activeTab !== 'nlp' || mode === 'city') return;
     const iv = setInterval(fetchData, 45000);
     return () => clearInterval(iv);
-  }, [activeTab, filters.days]);
+  }, [activeTab, filters.days, mode]);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      // Fetch incidents
-      const incidentsRes = await incidentsAPI.getIncidents({
-        limit: 100,
-        ...filters,
-        days: filters.days
-      });
-      if (incidentsRes.data?.incidents) {
-        setIncidents(incidentsRes.data.incidents);
+      if (mode === 'city' && !currentCityId) {
+        setLoading(false);
+        return;
       }
-
-      // Fetch summary
-      const summaryRes = await incidentsAPI.getSummary(filters.days);
-      if (summaryRes.data) {
-        setSummary(summaryRes.data);
-      }
-
-      // Fetch trends
-      const trendsRes = await incidentsAPI.getTrends(filters.days);
-      if (trendsRes.data?.trends) {
-        setTrends(trendsRes.data.trends);
-      }
-
-      // Fetch zones for filter
-      const zonesRes = await dataAPI.getZones();
-      if (zonesRes.data?.zones) {
-        setZones(zonesRes.data.zones);
+      if (mode === 'city' && currentCityId) {
+        // City Live: fetch 311 requests, map to incident-like shape
+        const res = await liveAPI.get311Requests(currentCityId, 100, filters.status || null);
+        const requests = res.data?.requests || [];
+        const mapped = map311ToIncidents(requests);
+        setIncidents(mapped);
+        setSummary(compute311Summary(mapped));
+        setTrends([]);
+        const zRes = await cityAPI.getZoneCoordinates(currentCityId).catch(() => ({ data: { zones: [] } }));
+        setZones(zRes.data?.zones || []);
+      } else if (mode === 'sim') {
+        // Simulated: use incident_reports + NLP
+        const incidentsRes = await incidentsAPI.getIncidents({
+          limit: 100,
+          ...filters,
+          days: filters.days
+        });
+        if (incidentsRes.data?.incidents) setIncidents(incidentsRes.data.incidents);
+        const summaryRes = await incidentsAPI.getSummary(filters.days);
+        if (summaryRes.data) setSummary(summaryRes.data);
+        const trendsRes = await incidentsAPI.getTrends(filters.days);
+        if (trendsRes.data?.trends) setTrends(trendsRes.data.trends);
+        const zonesRes = await dataAPI.getZones();
+        if (zonesRes.data?.zones) setZones(zonesRes.data.zones);
+      } else {
+        setIncidents([]);
+        setSummary(null);
+        setTrends([]);
+        setZones([]);
       }
     } catch (error) {
       console.error('Error fetching incident data:', error);
@@ -113,8 +185,9 @@ export default function IncidentReports() {
     }
   };
 
+  const isCityMode = mode === 'city';
   const filteredIncidents = incidents.filter(inc => {
-    if (filters.zone_id && inc.zone_id !== filters.zone_id) return false;
+    if (!isCityMode && filters.zone_id && inc.zone_id !== filters.zone_id) return false;
     if (filters.category && inc.nlp_analysis?.category !== filters.category) return false;
     if (filters.urgency && inc.nlp_analysis?.urgency !== filters.urgency) return false;
     if (filters.status && inc.status !== filters.status) return false;
@@ -158,11 +231,11 @@ export default function IncidentReports() {
   const tabs = [
     { id: 'overview', label: 'Overview', icon: BarChart3 },
     { id: 'list', label: 'All Incidents', icon: FileText },
-    { id: 'report', label: 'Report Incident', icon: PenSquare },
-    { id: 'nlp', label: 'NLP Analysis', icon: Activity },
+    ...(!isCityMode ? [{ id: 'report', label: 'Report Incident', icon: PenSquare }] : []),
+    { id: 'nlp', label: isCityMode ? 'NLP (311 only)' : 'NLP Analysis', icon: Activity },
     { id: 'pipeline', label: 'Pipeline & Procedure', icon: GitBranch },
     { id: 'nlp-engine', label: 'NLP Engine', icon: Cpu },
-    { id: 'trends', label: 'Trends', icon: TrendingUp }
+    ...(!isCityMode ? [{ id: 'trends', label: 'Trends', icon: TrendingUp }] : [])
   ];
 
   const formatDate = (dateStr) => {
@@ -223,7 +296,11 @@ export default function IncidentReports() {
       <motion.div className="page-header" initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }}>
         <div className="header-content">
           <h1><FileText size={32} /> Incident Reports</h1>
-          <p>NLP-powered incident analysis, classification, and tracking</p>
+          <p>
+            {isCityMode
+              ? `City 311 service requests${currentCityId ? ` for ${currentCityId.toUpperCase()}` : ''} — live data`
+              : 'NLP-powered incident analysis, classification, and tracking'}
+          </p>
         </div>
         <button className="btn btn-secondary" onClick={fetchData}>
           <RefreshCw size={18} /> Refresh
@@ -309,6 +386,7 @@ export default function IncidentReports() {
           <Filter size={18} />
           <strong>Filters:</strong>
         </div>
+        {!isCityMode && (
         <select 
           value={filters.zone_id} 
           onChange={(e) => setFilters({...filters, zone_id: e.target.value})}
@@ -316,9 +394,10 @@ export default function IncidentReports() {
         >
           <option value="">All Zones</option>
           {zones.map(z => (
-            <option key={z.id} value={z.id}>{z.name || z.id}</option>
+            <option key={z.zone_id || z.id || z._id} value={z.zone_id || z.id || z._id}>{z.name || z.zone_id || z.id}</option>
           ))}
         </select>
+        )}
         <select 
           value={filters.category} 
           onChange={(e) => setFilters({...filters, category: e.target.value})}

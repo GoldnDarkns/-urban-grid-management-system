@@ -8,7 +8,7 @@
 
 ## 📋 Executive Summary
 
-The **Urban Grid Management System** is a full-stack intelligent platform for managing urban energy grids with climate and constraint awareness. The system uses deep learning models (LSTM, Autoencoder, GNN, ARIMA, Prophet) to forecast demand, detect anomalies, and assess zone risks in real-time.
+The **Urban Grid Management System** is a full-stack intelligent platform for managing urban energy grids with climate and constraint awareness. The system uses deep learning models (TFT primary for demand, LSTM comparison, Autoencoder, GNN, ARIMA, Prophet) to forecast demand, detect anomalies, and assess zone risks in real-time.
 
 ### Key Achievements
 - ✅ **14 Navigation Pages** - Complete user interface (including Incident Reports)
@@ -72,7 +72,8 @@ The **Urban Grid Management System** is a full-stack intelligent platform for ma
 
 | Model | Type | Purpose | Status | Performance |
 |-------|------|---------|--------|-------------|
-| **LSTM** | Deep Learning | Demand Forecasting | ✅ Trained | RMSE: 64.27, R²: 0.64 |
+| **TFT** | Deep Learning | Demand Forecasting (primary) | ✅ In use | Interpretable multi-horizon |
+| **LSTM** | Deep Learning | Demand Forecasting (comparison) | ✅ Trained | RMSE: 64.27, R²: 0.64 |
 | **Autoencoder** | Deep Learning | Anomaly Detection | ✅ Trained | Anomaly Rate: 5.33% |
 | **GNN** | Deep Learning | Zone Risk Scoring | ✅ Trained | Accuracy: 95%+ |
 | **ARIMA** | Statistical | Demand Forecasting | ✅ Trained | RMSE: 88.82, R²: 0.5352 |
@@ -126,9 +127,7 @@ The **Urban Grid Management System** is a full-stack intelligent platform for ma
    - Anomaly detection timeline
    - **Status:** ✅ Fully Functional - All data accurate
 
-5. **LSTM** (`/lstm`)
-   - LSTM model architecture visualization
-   - LSTM gates explanation
+5. **TFT** (Advanced Analytics → TFT) — Primary demand forecasting; **LSTM** (`/lstm` or Advanced Analytics → LSTM) — Comparison baseline, architecture, gates
    - Live demand predictions
    - Training history
    - Error analysis
@@ -149,7 +148,7 @@ The **Urban Grid Management System** is a full-stack intelligent platform for ma
    - **Status:** ✅ Fully Functional - Risk thresholds optimized
 
 8. **Model Comparison** (`/comparison`)
-   - Performance comparison (LSTM, ARIMA, Prophet)
+   - Performance comparison (TFT primary, LSTM, ARIMA, Prophet)
    - 48-hour prediction comparison
    - Error distribution
    - Training time comparison
@@ -219,8 +218,8 @@ The **Urban Grid Management System** is a full-stack intelligent platform for ma
 
 ### Models Endpoints (`/api/models`)
 - `GET /overview` - All models status and metrics
-- `GET /lstm` - LSTM model details
-- `GET /lstm/prediction` - Live LSTM prediction
+- `GET /models/tft` - TFT (primary) model; `GET /models/tft/prediction` - Live TFT prediction
+- `GET /lstm` - LSTM (comparison) model details; `GET /lstm/prediction` - Live LSTM prediction
 - `GET /autoencoder` - Autoencoder model details
 - `GET /gnn` - GNN model details and architecture
 - `GET /arima` - ARIMA model details

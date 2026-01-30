@@ -13,20 +13,27 @@ export default function TronArchitectureDiagram({ isFullscreen = false, onToggle
   const [clickedNode, setClickedNode] = useState(null);
   const [connectionAnimation, setConnectionAnimation] = useState(0);
 
-  // Connections definition (static)
+  // Connections definition (static) - full flow including Kafka, Neo4j KG, Live Stream, City Map
   const connections = [
-    // Data to ML - clean vertical flow
+    // Data to ML
     { from: 'mongodb', to: 'forecast', fromLayer: 'data', toLayer: 'ml' },
     { from: 'indexes', to: 'anomaly', fromLayer: 'data', toLayer: 'ml' },
     { from: 'sources', to: 'risk', fromLayer: 'data', toLayer: 'ml' },
+    { from: 'kafka', to: 'fastapi', fromLayer: 'data', toLayer: 'api' },
     // ML to API
     { from: 'forecast', to: 'fastapi', fromLayer: 'ml', toLayer: 'api' },
     { from: 'anomaly', to: 'fastapi', fromLayer: 'ml', toLayer: 'api' },
+    { from: 'risk', to: 'fastapi', fromLayer: 'ml', toLayer: 'api' },
     { from: 'risk', to: 'ai', fromLayer: 'ml', toLayer: 'api' },
+    { from: 'risk', to: 'kg_sync', fromLayer: 'ml', toLayer: 'api' },
+    { from: 'mongodb', to: 'kg_sync', fromLayer: 'data', toLayer: 'api' },
     // API to UI
     { from: 'fastapi', to: 'dashboard', fromLayer: 'api', toLayer: 'ui' },
-    { from: 'ai', to: 'recommendations', fromLayer: 'api', toLayer: 'ui' },
+    { from: 'fastapi', to: 'livestream', fromLayer: 'api', toLayer: 'ui' },
+    { from: 'fastapi', to: 'citymap', fromLayer: 'api', toLayer: 'ui' },
     { from: 'fastapi', to: 'visualizations', fromLayer: 'api', toLayer: 'ui' },
+    { from: 'ai', to: 'recommendations', fromLayer: 'api', toLayer: 'ui' },
+    { from: 'kg_sync', to: 'recommendations', fromLayer: 'api', toLayer: 'ui' },
   ];
 
   // Calculate centered positions for components
@@ -36,49 +43,53 @@ export default function TronArchitectureDiagram({ isFullscreen = false, onToggle
     const layers = [
       {
         id: 'data',
-        label: 'DATA SOURCES',
-        y: 90,
+        label: 'DATA SOURCES & INGESTION',
+        y: 85,
         color: '#00d4ff',
         description: 'Real-time & Historical Data Collection',
         components: [
-          { id: 'mongodb', label: 'MongoDB (Dual)', width: 200, height: 65, details: ['Atlas: Sim Data', 'Local: City Data', 'Time-Series'] },
-          { id: 'indexes', label: 'Optimized Indexes', width: 200, height: 65, details: ['10+ Indexes', 'Fast Queries', 'Real-time'] },
-          { id: 'sources', label: 'Live APIs', width: 200, height: 65, details: ['OpenWeatherMap • AirVisual', 'TomTom • EIA • Census', 'City 311 • 20 Zones/City'] },
+          { id: 'mongodb', label: 'MongoDB (Dual)', width: 180, height: 70, details: ['Atlas: Sim Data', 'Local: City Data', 'processed_zone_data, kafka_live_feed'] },
+          { id: 'indexes', label: 'Optimized Indexes', width: 160, height: 70, details: ['10+ Indexes', 'Fast Queries', 'Real-time'] },
+          { id: 'sources', label: 'Live APIs', width: 180, height: 70, details: ['OpenWeatherMap • AirVisual', 'TomTom • EIA • Census', 'City 311 • Fallbacks: CSV/XLSX'] },
+          { id: 'kafka', label: 'Kafka Pipeline', width: 180, height: 70, details: ['Topics: AQI, Traffic, Power, Alerts, Incidents', 'Consumer → kafka_live_feed', 'Updates ~45s'] },
         ]
       },
       {
         id: 'ml',
-        label: 'MACHINE LEARNING',
-        y: 200,
+        label: 'MACHINE LEARNING (5 Models)',
+        y: 215,
         color: '#00ff88',
-        description: '5 AI Models for Prediction & Analysis',
+        description: 'TFT Primary, LSTM Comparison, Autoencoder, GNN, Neo4j KG',
         components: [
-          { id: 'forecast', label: 'Demand Forecasting', width: 240, height: 70, details: ['LSTM • ARIMA • Prophet', 'Live City Data Processing', 'Every 5 Minutes'] },
-          { id: 'anomaly', label: 'Anomaly Detection', width: 240, height: 70, details: ['Autoencoder', 'Real-time Pattern Analysis', 'Per-Zone Detection'] },
-          { id: 'risk', label: 'Risk Assessment', width: 240, height: 70, details: ['Graph Neural Network', 'Live Risk Scoring', 'AQI + Traffic + Demand'] },
+          { id: 'forecast', label: 'Demand Forecasting', width: 220, height: 72, details: ['TFT (primary) • LSTM (comparison)', 'ARIMA • Prophet', 'Live City Data, Every 5 Min'] },
+          { id: 'anomaly', label: 'Anomaly Detection', width: 200, height: 72, details: ['Autoencoder', 'Per-Zone Detection', 'Threshold 2× baseline'] },
+          { id: 'risk', label: 'Risk: GNN + Neo4j KG', width: 240, height: 72, details: ['GNN: Live Risk Scoring', 'Neo4j: Zones, Adjacency', 'Cypher Risk Reasoning'] },
         ]
       },
       {
         id: 'api',
         label: 'ANALYSIS & PROCESSING',
-        y: 320,
+        y: 345,
         color: '#ffaa00',
-        description: 'Real-time Data Processing & API',
+        description: 'FastAPI, City Processing, Neo4j Sync, OpenRouter',
         components: [
-          { id: 'fastapi', label: 'FastAPI Backend', width: 280, height: 65, details: ['30+ REST Endpoints', 'BackgroundProcessor (5min)', 'Mode-Aware Routing'] },
-          { id: 'ai', label: 'AI Recommendations', width: 280, height: 65, details: ['OpenRouter LLM', 'Analyzes All ML Outputs', 'Prioritized Actions'] },
+          { id: 'fastapi', label: 'FastAPI Backend', width: 220, height: 68, details: ['30+ REST Endpoints', 'City process_all_zones', 'Mode-Aware (City/Sim)'] },
+          { id: 'ai', label: 'AI Recommendations', width: 200, height: 68, details: ['OpenRouter LLM', 'All ML Outputs → Actions', 'OPENROUTER_API_KEY in .env'] },
+          { id: 'kg_sync', label: 'Neo4j KG Sync', width: 200, height: 68, details: ['Sync from processed_zone_data', '/api/kg/sync, /api/kg/graph', 'After city processing'] },
         ]
       },
       {
         id: 'ui',
-        label: 'DECISION SUPPORT',
-        y: 430,
+        label: 'DECISION SUPPORT & DASHBOARDS',
+        y: 465,
         color: '#aa66ff',
-        description: 'Actionable Intelligence Dashboard',
+        description: 'Real-time Dashboard, Analytics, Live Stream, City Map',
         components: [
-          { id: 'dashboard', label: 'Real-time Dashboard', width: 220, height: 65, details: ['Live Monitoring', 'City Selector', 'Key Metrics'] },
-          { id: 'recommendations', label: 'AI Recommendations', width: 220, height: 65, details: ['Prioritized Actions', 'Cost-Benefit Analysis', 'Simulations'] },
-          { id: 'visualizations', label: 'Interactive Analytics', width: 220, height: 65, details: ['Charts & Graphs', 'Zone Comparisons', 'Live API Data'] },
+          { id: 'dashboard', label: 'Dashboard & Home', width: 160, height: 68, details: ['City Selector', 'Key Metrics', 'Architecture (this diagram)'] },
+          { id: 'recommendations', label: 'AI Recommendations', width: 160, height: 68, details: ['Prioritized Actions', 'Cost-Benefit', 'Simulations'] },
+          { id: 'visualizations', label: 'Analytics', width: 160, height: 68, details: ['Heat Maps, Demand by Zone', 'Historical vs Real-time', 'Anomalies Timeline'] },
+          { id: 'livestream', label: 'Live Stream', width: 140, height: 68, details: ['Kafka feed by topic', 'AQI, Traffic, Power', '~45s refresh'] },
+          { id: 'citymap', label: 'City Map', width: 140, height: 68, details: ['2D Grid, Scrollable', 'TFT/LSTM, GNN, Cascade', 'Zone risk colors'] },
         ]
       }
     ];
@@ -413,7 +424,7 @@ export default function TronArchitectureDiagram({ isFullscreen = false, onToggle
       style={{
         position: 'relative',
         width: '100%',
-        height: isFullscreen ? '100vh' : '550px',
+        height: isFullscreen ? '100vh' : '620px',
         overflow: 'hidden',
         background: 'linear-gradient(135deg, #0a0e27 0%, #1a1f3a 100%)',
         border: '1px solid rgba(0, 212, 255, 0.2)',

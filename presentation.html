@@ -9,7 +9,34 @@
     <style>
         .reveal .slides section {
             text-align: left;
+            overflow-y: auto;
+            overflow-x: hidden;
+            max-height: 90vh;
+            padding: 1.5rem;
         }
+        
+        /* Make sure text is readable and fits */
+        .reveal .slides section p,
+        .reveal .slides section li,
+        .reveal .slides section td {
+            font-size: 0.9em;
+            line-height: 1.5;
+        }
+        
+        /* Adjust heading sizes */
+        .reveal .slides section h1 {
+            font-size: 2em;
+            margin-bottom: 0.8em;
+        }
+        .reveal .slides section h2 {
+            font-size: 1.5em;
+            margin-bottom: 0.6em;
+        }
+        .reveal .slides section h3 {
+            font-size: 1.2em;
+            margin-bottom: 0.5em;
+        }
+        
         .reveal h1, .reveal h2, .reveal h3 {
             color: #00ff88;
         }
@@ -31,8 +58,8 @@
         .stats-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
-            gap: 20px;
-            margin: 20px 0;
+            gap: 15px;
+            margin: 15px 0;
         }
         .stat-card {
             background: rgba(0, 255, 136, 0.1);
@@ -41,7 +68,7 @@
             padding: 15px;
         }
         .stat-number {
-            font-size: 2.5em;
+            font-size: 2.2em;
             font-weight: bold;
             color: #00ff88;
         }
@@ -54,7 +81,7 @@
             padding: 0;
         }
         .feature-list li {
-            padding: 10px 0;
+            padding: 8px 0;
             border-bottom: 1px solid #333;
         }
         .feature-list li:before {
@@ -66,8 +93,8 @@
         .architecture-diagram {
             display: flex;
             flex-direction: column;
-            gap: 20px;
-            margin: 20px 0;
+            gap: 15px;
+            margin: 15px 0;
         }
         .layer {
             background: rgba(0, 212, 255, 0.1);
@@ -90,7 +117,8 @@
         .comparison-table {
             width: 100%;
             border-collapse: collapse;
-            margin: 20px 0;
+            margin: 15px 0;
+            font-size: 0.8em;
         }
         .comparison-table th,
         .comparison-table td {
@@ -109,40 +137,322 @@
             font-family: 'Courier New', monospace;
             font-size: 0.7em;
             overflow-x: auto;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .university-logo {
+            width: 200px;
+            height: 200px;
+            margin: 0 auto 20px;
+            background: linear-gradient(135deg, #8B4513 0%, #A0522D 100%);
+            border: 3px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 20px rgba(139, 69, 19, 0.3);
+        }
+        .university-logo .spj-text {
+            font-size: 3.5em;
+            font-weight: 900;
+            color: #FFFFFF;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+            letter-spacing: 2px;
+            margin-bottom: 8px;
+        }
+        .university-logo .global-text {
+            font-size: 0.9em;
+            color: #FFFFFF;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-transform: uppercase;
         }
     </style>
 </head>
 <body>
     <div class="reveal">
         <div class="slides">
-            <!-- Title Slide -->
+            <!-- Title Slide with University Details -->
             <section>
-                <h1>Urban Grid Management System</h1>
-                <h3>Climate- & Constraint-Aware Energy Grid Management</h3>
-                <p style="margin-top: 50px; font-size: 0.8em; color: #aaa;">
-                    Intelligent System for Managing Urban Energy Grids<br>
-                    with Deep Learning & Real-Time Analytics
-                </p>
-                <p style="margin-top: 30px; font-size: 0.6em; color: #666;">
-                    Version 1.0.0 | January 2026
+                <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 40px;">
+                    <div style="text-align: center;">
+                        <!-- University Logo -->
+                        <div class="university-logo">
+                            <div class="spj-text">SPJ</div>
+                            <div class="global-text">GLOBAL</div>
+                        </div>
+                        <p style="font-size: 0.9em; color: #aaa; margin-top: 10px;">
+                            S P Jain School of Global Management
+                        </p>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 50px; text-align: center;">
+                    <h2 style="color: #00ff88; margin-bottom: 30px;">Urban Grid Management System</h2>
+                    <h3 style="color: #ffaa00; margin-bottom: 40px;">Climate- & Constraint-Aware Energy Grid Management</h3>
+                    
+                    <div style="background: rgba(0, 255, 136, 0.1); border: 1px solid #00ff88; border-radius: 8px; padding: 25px; margin: 30px auto; max-width: 600px; text-align: left;">
+                        <p style="font-size: 1em; margin-bottom: 15px;">
+                            <strong style="color: #00ff88;">Name:</strong> 
+                            <span style="color: #fff;">Madhavan Vij</span>
+                        </p>
+                        <p style="font-size: 1em; margin-bottom: 15px;">
+                            <strong style="color: #00ff88;">Register Number:</strong> 
+                            <span style="color: #fff;">AM25DXB011</span>
+                        </p>
+                        <p style="font-size: 1em; margin-bottom: 15px;">
+                            <strong style="color: #00ff88;">Subject:</strong> 
+                            <span style="color: #fff;">Introduction to Databases (MAIB CSC 107)</span>
+                        </p>
+                        <p style="font-size: 1em; margin-bottom: 0;">
+                            <strong style="color: #00ff88;">Project Title:</strong> 
+                            <span style="color: #fff;">Urban Grid Management System</span>
+                        </p>
+                    </div>
+                    
+                    <p style="margin-top: 40px; font-size: 0.7em; color: #666;">
+                        Academic Year 2025-2026
+                    </p>
+                </div>
+            </section>
+
+            <!-- Introduction -->
+            <section>
+                <h2>Introduction</h2>
+                <div style="margin-top: 30px;">
+                    <h3 class="highlight">The Problem</h3>
+                    <p style="font-size: 0.9em; line-height: 1.6;">
+                        Modern urban energy grids face unprecedented challenges:
+                    </p>
+                    <ul style="font-size: 0.85em; margin-top: 20px;">
+                        <li><strong>Climate Extremes:</strong> Heat waves and cold snaps cause massive demand spikes</li>
+                        <li><strong>Environmental Constraints:</strong> High AQI levels force cities to restrict activities</li>
+                        <li><strong>Grid Stability:</strong> Balancing supply, demand, and emissions in real-time</li>
+                        <li><strong>Data Overload:</strong> Millions of data points from sensors, meters, and systems</li>
+                    </ul>
+                    <p style="margin-top: 30px; font-size: 0.9em; color: #ffaa00;">
+                        <strong>Challenge:</strong> How can cities make intelligent decisions when multiple constraints conflict?
+                    </p>
+                </div>
+            </section>
+
+            <!-- Objectives -->
+            <section>
+                <h2>Objectives</h2>
+                <div style="margin-top: 30px;">
+                    <h3 style="color: #00ff88;">Primary Objectives</h3>
+                    <ul class="feature-list" style="font-size: 0.9em; margin-top: 20px;">
+                        <li>Design and implement a comprehensive database system for urban grid management</li>
+                        <li>Develop machine learning models for demand forecasting and anomaly detection</li>
+                        <li>Create a real-time monitoring and analytics dashboard</li>
+                        <li>Integrate multiple data sources (energy, climate, infrastructure)</li>
+                        <li>Provide actionable insights for grid operators and city planners</li>
+                    </ul>
+                    
+                    <h3 style="color: #00ff88; margin-top: 40px;">Technical Objectives</h3>
+                    <ul class="feature-list" style="font-size: 0.9em; margin-top: 20px;">
+                        <li>Implement efficient database schema with optimized indexes</li>
+                        <li>Build RESTful API for data access and analytics</li>
+                        <li>Create interactive frontend with real-time updates</li>
+                        <li>Deploy and scale the system for production use</li>
+                    </ul>
+                </div>
+            </section>
+
+            <!-- Literature Review -->
+            <section>
+                <h2>Literature Review</h2>
+                <div style="margin-top: 30px; font-size: 0.85em;">
+                    <h3 style="color: #00ff88;">Key Research Areas</h3>
+                    <div style="margin-top: 20px;">
+                        <p><strong>1. Time-Series Forecasting in Energy Systems</strong></p>
+                        <ul style="margin-left: 20px; margin-bottom: 20px;">
+                            <li>LSTM networks for energy demand prediction (Sehovac et al., 2020)</li>
+                            <li>ARIMA and Prophet models for seasonal forecasting (Taylor & Letham, 2018)</li>
+                            <li>Ensemble methods for improved accuracy</li>
+                        </ul>
+                        
+                        <p><strong>2. Anomaly Detection in Smart Grids</strong></p>
+                        <ul style="margin-left: 20px; margin-bottom: 20px;">
+                            <li>Autoencoder-based anomaly detection (Chandola et al., 2009)</li>
+                            <li>Real-time monitoring of grid health</li>
+                            <li>Early warning systems for equipment failures</li>
+                        </ul>
+                        
+                        <p><strong>3. Graph Neural Networks for Infrastructure</strong></p>
+                        <ul style="margin-left: 20px; margin-bottom: 20px;">
+                            <li>GNN applications in power grid analysis (Zhou et al., 2020)</li>
+                            <li>Network topology and interdependency modeling</li>
+                            <li>Risk propagation in interconnected systems</li>
+                        </ul>
+                        
+                        <p><strong>4. Database Design for IoT and Time-Series Data</strong></p>
+                        <ul style="margin-left: 20px;">
+                            <li>MongoDB for time-series data storage (MongoDB Inc., 2023)</li>
+                            <li>Index optimization for fast queries</li>
+                            <li>Scalability patterns for large-scale sensor data</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Proposed Methodology -->
+            <section>
+                <h2>Proposed Methodology</h2>
+                <h3>System Architecture</h3>
+                <div class="architecture-diagram" style="margin-top: 20px;">
+                    <div class="layer">
+                        <strong>Data Layer</strong> - MongoDB Atlas<br>
+                        <small>Time-series data, 360K+ readings, optimized indexes</small>
+                    </div>
+                    <div class="layer ml">
+                        <strong>ML Layer</strong> - Deep Learning Models<br>
+                        <small>LSTM, Autoencoder, GNN, ARIMA, Prophet</small>
+                    </div>
+                    <div class="layer api">
+                        <strong>API Layer</strong> - FastAPI Backend<br>
+                        <small>RESTful endpoints, real-time analytics, CORS enabled</small>
+                    </div>
+                    <div class="layer ui">
+                        <strong>UI Layer</strong> - React Frontend<br>
+                        <small>14 pages, interactive charts, real-time dashboards</small>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Proposed Methodology - Database Design -->
+            <section>
+                <h2>Proposed Methodology</h2>
+                <h3>Database Design</h3>
+                <div style="margin-top: 30px; font-size: 0.85em;">
+                    <p><strong>Collections:</strong></p>
+                    <ul>
+                        <li><strong>meter_readings:</strong> Energy consumption data (360K+ documents)</li>
+                        <li><strong>air_climate_readings:</strong> AQI and climate data (14K+ documents)</li>
+                        <li><strong>zones:</strong> Zone metadata and configuration</li>
+                        <li><strong>alerts:</strong> System alerts and notifications</li>
+                        <li><strong>incidents:</strong> Incident reports with NLP analysis</li>
+                        <li><strong>constraint_events:</strong> AQI-based constraint events</li>
+                        <li><strong>lstm_predictions:</strong> ML model predictions</li>
+                        <li><strong>gnn_risk_scores:</strong> Zone risk assessments</li>
+                    </ul>
+                    <p style="margin-top: 30px;"><strong>Indexes:</strong> 10+ optimized indexes for fast queries</p>
+                </div>
+            </section>
+
+            <!-- Proposed Methodology - ML Models -->
+            <section>
+                <h2>Proposed Methodology</h2>
+                <h3>Machine Learning Pipeline</h3>
+                <table class="comparison-table" style="font-size: 0.7em; margin-top: 20px;">
+                    <thead>
+                        <tr>
+                            <th>Model</th>
+                            <th>Type</th>
+                            <th>Purpose</th>
+                            <th>Performance</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>LSTM</strong></td>
+                            <td>Deep Learning</td>
+                            <td>Demand Forecasting</td>
+                            <td>RMSE: 64.27, R²: 0.64</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Prophet</strong></td>
+                            <td>Statistical</td>
+                            <td>Seasonal Forecasting</td>
+                            <td class="success">RMSE: 48.41, R²: 0.86 ⭐</td>
+                        </tr>
+                        <tr>
+                            <td><strong>ARIMA</strong></td>
+                            <td>Statistical</td>
+                            <td>Time-Series Forecasting</td>
+                            <td>RMSE: 88.82, R²: 0.54</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Autoencoder</strong></td>
+                            <td>Deep Learning</td>
+                            <td>Anomaly Detection</td>
+                            <td>Anomaly Rate: 5.33%</td>
+                        </tr>
+                        <tr>
+                            <td><strong>GNN</strong></td>
+                            <td>Graph Neural Network</td>
+                            <td>Zone Risk Scoring</td>
+                            <td class="success">Accuracy: 95%+</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <!-- Results -->
+            <section>
+                <h2>Results</h2>
+                <h3>System Performance</h3>
+                <div class="stats-grid" style="margin-top: 30px;">
+                    <div class="stat-card">
+                        <div class="stat-number">360K+</div>
+                        <div class="stat-label">Meter Readings</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">14K+</div>
+                        <div class="stat-label">Climate Readings</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">20</div>
+                        <div class="stat-label">Zones</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">500</div>
+                        <div class="stat-label">Households</div>
+                    </div>
+                </div>
+                <p style="margin-top: 30px; font-size: 0.9em;">
+                    <strong>Database:</strong> MongoDB Atlas with optimized indexes<br>
+                    <strong>API Response Time:</strong> < 100ms average<br>
+                    <strong>Real-time Updates:</strong> Live dashboard refresh
                 </p>
             </section>
 
-            <!-- Problem Statement -->
+            <!-- Results - ML Performance -->
             <section>
-                <h2>The Challenge</h2>
-                <h3 class="highlight">Managing Grid Stability Under Extreme Conditions</h3>
-                <div style="margin-top: 30px;">
-                    <p><strong>The Problem:</strong></p>
-                    <ul>
-                        <li>Heat waves → People stay indoors → AC usage spikes</li>
-                        <li>High demand → More power generation → Emissions rise</li>
-                        <li>High AQI → City must restrict activities → Grid flexibility decreases</li>
-                        <li>High demand + Low flexibility = <span class="danger">Risk of blackouts</span></li>
+                <h2>Results</h2>
+                <h3>Machine Learning Model Performance</h3>
+                <div style="margin-top: 30px; font-size: 0.85em;">
+                    <div class="stat-card" style="margin-bottom: 20px;">
+                        <strong style="color: #00ff88;">Best Performing Model: Prophet</strong><br>
+                        <small>RMSE: 48.41 | R²: 0.86 | Excellent seasonal pattern capture</small>
+                    </div>
+                    <div class="stat-card" style="margin-bottom: 20px;">
+                        <strong style="color: #00ff88;">Anomaly Detection: Autoencoder</strong><br>
+                        <small>Anomaly Rate: 5.33% | Successfully identifies unusual patterns</small>
+                    </div>
+                    <div class="stat-card" style="margin-bottom: 20px;">
+                        <strong style="color: #00ff88;">Risk Assessment: GNN</strong><br>
+                        <small>Accuracy: 95%+ | Considers network effects and interdependencies</small>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Results - System Features -->
+            <section>
+                <h2>Results</h2>
+                <h3>Implemented Features</h3>
+                <div style="margin-top: 30px; font-size: 0.85em;">
+                    <ul class="feature-list">
+                        <li>14 interactive dashboard pages with real-time data</li>
+                        <li>30+ REST API endpoints for data access</li>
+                        <li>5 trained ML models with batch and real-time inference</li>
+                        <li>NLP-powered incident classification and analysis</li>
+                        <li>AI recommendations based on ML model outputs</li>
+                        <li>MongoDB queries optimized with indexes</li>
+                        <li>3D city visualization and simulation capabilities</li>
+                        <li>Live API integrations (Weather, AQI, Traffic)</li>
                     </ul>
-                    <p style="margin-top: 30px; font-size: 0.9em; color: #ffaa00;">
-                        <strong>City must balance:</strong> Keep people safe (power) vs. Reduce pollution vs. Prevent blackouts
-                    </p>
                 </div>
             </section>
 
@@ -379,33 +689,6 @@
                 </div>
             </section>
 
-            <!-- Data & Performance -->
-            <section>
-                <h2>Data & Performance</h2>
-                <div class="stats-grid" style="margin-top: 30px;">
-                    <div class="stat-card">
-                        <div class="stat-number">360K+</div>
-                        <div class="stat-label">Meter Readings</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-number">14K+</div>
-                        <div class="stat-label">Climate Readings</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-number">20</div>
-                        <div class="stat-label">Zones</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-number">500</div>
-                        <div class="stat-label">Households</div>
-                    </div>
-                </div>
-                <p style="margin-top: 30px; font-size: 0.9em;">
-                    <strong>Database:</strong> MongoDB Atlas with optimized indexes<br>
-                    <strong>API Response Time:</strong> < 100ms average<br>
-                    <strong>Real-time Updates:</strong> Live dashboard refresh
-                </p>
-            </section>
 
             <!-- Future Improvements -->
             <section>
@@ -573,14 +856,40 @@
                 </div>
             </section>
 
+            <!-- References -->
+            <section>
+                <h2>References</h2>
+                <div style="margin-top: 30px; font-size: 0.75em; text-align: left;">
+                    <ol style="line-height: 2;">
+                        <li>Sehovac, L., & Grolinger, K. (2020). Deep Learning for Load Forecasting: A Review. <em>IEEE Transactions on Smart Grid</em>, 11(4), 2998-3012.</li>
+                        <li>Taylor, S. J., & Letham, B. (2018). Forecasting at Scale. <em>The American Statistician</em>, 72(1), 37-45.</li>
+                        <li>Chandola, V., Banerjee, A., & Kumar, V. (2009). Anomaly Detection: A Survey. <em>ACM Computing Surveys</em>, 41(3), 1-58.</li>
+                        <li>Zhou, J., et al. (2020). Graph Neural Networks: A Review of Methods and Applications. <em>AI Open</em>, 1, 57-81.</li>
+                        <li>MongoDB Inc. (2023). MongoDB Time Series Collections. <em>MongoDB Documentation</em>. Retrieved from https://docs.mongodb.com/</li>
+                        <li>FastAPI. (2023). FastAPI: Modern, Fast Web Framework. Retrieved from https://fastapi.tiangolo.com/</li>
+                        <li>React. (2023). React - A JavaScript Library for Building User Interfaces. Retrieved from https://react.dev/</li>
+                        <li>TensorFlow. (2023). TensorFlow: An End-to-End Open Source Machine Learning Platform. Retrieved from https://www.tensorflow.org/</li>
+                        <li>OpenWeatherMap. (2023). Weather API Documentation. Retrieved from https://openweathermap.org/api</li>
+                        <li>TomTom. (2023). Traffic API Documentation. Retrieved from https://developer.tomtom.com/</li>
+                    </ol>
+                </div>
+            </section>
+
             <!-- Thank You -->
             <section>
                 <h1>Thank You</h1>
                 <h3>Questions?</h3>
-                <p style="margin-top: 50px; font-size: 0.9em; color: #aaa;">
-                    Urban Grid Management System<br>
-                    Version 1.0.0
-                </p>
+                <div style="margin-top: 50px; font-size: 0.9em;">
+                    <p style="color: #00ff88; margin-bottom: 20px;">
+                        <strong>Madhavan Vij</strong><br>
+                        Register Number: AM25DXB011
+                    </p>
+                    <p style="color: #aaa; margin-top: 30px;">
+                        Urban Grid Management System<br>
+                        Introduction to Databases (MAIB CSC 107)<br>
+                        S P Jain School of Global Management
+                    </p>
+                </div>
             </section>
         </div>
     </div>
@@ -595,8 +904,39 @@
             touch: true,
             loop: false,
             transition: 'slide',
-            backgroundTransition: 'fade'
+            backgroundTransition: 'fade',
+            width: 1200,
+            height: 800,
+            margin: 0.1,
+            minScale: 0.2,
+            maxScale: 1.5
         });
+        
+        // Allow scrolling within sections that overflow
+        Reveal.addEventListener('ready', function(event) {
+            const sections = document.querySelectorAll('.reveal .slides section');
+            sections.forEach(section => {
+                // Check if content overflows
+                if (section.scrollHeight > section.clientHeight) {
+                    section.style.overflowY = 'auto';
+                    section.style.maxHeight = '90vh';
+                }
+            });
+        });
+        
+        // Prevent reveal.js from blocking scroll events
+        document.addEventListener('wheel', function(e) {
+            const activeSection = document.querySelector('.reveal .slides section.present');
+            if (activeSection) {
+                const isAtTop = activeSection.scrollTop === 0;
+                const isAtBottom = activeSection.scrollTop + activeSection.clientHeight >= activeSection.scrollHeight - 1;
+                
+                // Only allow reveal.js navigation if at top/bottom of section
+                if ((e.deltaY < 0 && !isAtTop) || (e.deltaY > 0 && !isAtBottom)) {
+                    e.stopPropagation();
+                }
+            }
+        }, { passive: false });
     </script>
 </body>
 </html>
