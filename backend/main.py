@@ -68,19 +68,45 @@ from fastapi.exceptions import RequestValidationError
 from pymongo.errors import ConnectionFailure
 import json
 
-from backend.routes import data, models, analytics, simulations, incidents, queries, ai_recommendations, live_data, city_selection, live_stream, knowledge_graph
+from backend.routes import data, models, analytics, simulations, incidents, queries, ai_recommendations, live_data, city_selection, live_stream, knowledge_graph, grounding, agent, voice, scenarios
 
-# CORS headers to add to ALL responses (including errors) so browser never blocks
+# CORS: allow these origins (Vite dev ports + Docker). Must match CORSMiddleware allow_origins.
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:5176",
+    "http://localhost:5177", "http://localhost:5178", "http://localhost:5179", "http://localhost:5180",
+    "http://localhost", "http://localhost:80", "http://127.0.0.1", "http://127.0.0.1:80",
+    "http://127.0.0.1:5173", "http://127.0.0.1:5174", "http://127.0.0.1:5175", "http://127.0.0.1:5176",
+    "http://127.0.0.1:5177", "http://127.0.0.1:5178", "http://127.0.0.1:5179", "http://127.0.0.1:5180",
+]
+import re
+_CORS_ORIGIN_REGEX = re.compile(r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$")
+
+def _origin_allowed(origin: str) -> bool:
+    if not origin:
+        return False
+    if origin in CORS_ALLOWED_ORIGINS:
+        return True
+    return bool(_CORS_ORIGIN_REGEX.match(origin))
+
 CORS_HEADERS = {
-    "Access-Control-Allow-Origin": "http://localhost:5173",
+    "Access-Control-Allow-Origin": "http://localhost:5176",  # default; use get_cors_headers(request) when request available
     "Access-Control-Allow-Credentials": "true",
     "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "*",
 }
 
-def json_with_cors(status_code: int, content: dict):
+def get_cors_headers(request: "Request" = None):
+    """Return CORS headers, echoing request origin if allowed (so any dev port works)."""
+    if request and hasattr(request, "headers"):
+        origin = request.headers.get("origin")
+        if origin and _origin_allowed(origin):
+            return {**CORS_HEADERS, "Access-Control-Allow-Origin": origin}
+    return dict(CORS_HEADERS)
+
+def json_with_cors(status_code: int, content: dict, request: "Request" = None):
     """Return JSONResponse with CORS headers so frontend never sees CORS block."""
-    return JSONResponse(status_code=status_code, content=content, headers=dict(CORS_HEADERS))
+    return JSONResponse(status_code=status_code, content=content, headers=get_cors_headers(request))
 
 # Custom JSON encoder to handle ObjectId
 def custom_json_serializer(obj):
@@ -140,7 +166,7 @@ class ObjectIdMiddleware(BaseHTTPMiddleware):
                 content='{"error":"Middleware error"}',
                 media_type="application/json",
                 status_code=200,
-                headers=dict(CORS_HEADERS)
+                headers=get_cors_headers(request)
             )
     
     def _clean_objectids(self, obj):
@@ -160,18 +186,40 @@ class ObjectIdMiddleware(BaseHTTPMiddleware):
 # Add ObjectId middleware BEFORE CORS middleware
 app.add_middleware(ObjectIdMiddleware)
 
-# CORS middleware for React frontend (Vite dev, Docker Nginx on :80)
+# CORS middleware: allow any localhost/127.0.0.1 port (Vite dev) + explicit list for Docker
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "http://localhost:5175",
-        "http://localhost", "http://localhost:80", "http://127.0.0.1", "http://127.0.0.1:80",
-    ],
+    allow_origins=CORS_ALLOWED_ORIGINS,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",  # any localhost port
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"],
 )
+
+
+# Explicit CORS preflight handler: run first so OPTIONS always gets CORS headers (fixes browser preflight)
+class CORSPreflightMiddleware(BaseHTTPMiddleware):
+    """Handle OPTIONS preflight immediately with CORS headers so browser never blocks."""
+    async def dispatch(self, request: Request, call_next):
+        if request.method == "OPTIONS":
+            return Response(
+                status_code=200,
+                headers=get_cors_headers(request),
+            )
+        response = await call_next(request)
+        # Ensure CORS headers on all responses (in case CORSMiddleware didn't add them)
+        origin = request.headers.get("origin")
+        if origin and _origin_allowed(origin):
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Credentials"] = "true"
+            response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+            response.headers["Access-Control-Allow-Headers"] = "*"
+        return response
+
+
+# Add last so it runs first (Starlette middleware order)
+app.add_middleware(CORSPreflightMiddleware)
 
 # Exception handler for MongoDB connection errors
 @app.exception_handler(ConnectionFailure)
@@ -182,7 +230,7 @@ async def mongodb_connection_exception_handler(request: Request, exc: Connection
         error_msg = "MongoDB authentication failed. Please check your .env file."
     elif "replica set" in error_msg.lower() or "timeout" in error_msg.lower():
         error_msg = "MongoDB connection timeout. IP whitelist change may still be propagating."
-    return json_with_cors(200, {"error": error_msg, "connected": False})
+    return json_with_cors(200, {"error": error_msg, "connected": False}, request)
 
 # Handler for HTTPException (FastAPI's default exception)
 @app.exception_handler(HTTPException)
@@ -195,8 +243,8 @@ async def http_exception_handler(request: Request, exc: HTTPException):
             error_msg = "MongoDB authentication failed. Please check your .env file."
         elif "replica set" in error_lower or "timeout" in error_lower:
             error_msg = "MongoDB connection timeout. IP whitelist change may still be propagating."
-        return json_with_cors(200, {"error": error_msg, "connected": False, "detail": error_msg})
-    return json_with_cors(exc.status_code, {"detail": exc.detail})
+        return json_with_cors(200, {"error": error_msg, "connected": False, "detail": error_msg}, request)
+    return json_with_cors(exc.status_code, {"detail": exc.detail}, request)
 
 # General exception handler: always 200 + error body (never 500) so CORS headers are sent
 @app.exception_handler(Exception)
@@ -235,7 +283,7 @@ async def general_exception_handler(request: Request, exc: Exception):
                 content=response_json,
                 media_type="application/json",
                 status_code=200,
-                headers=dict(CORS_HEADERS)
+                headers=get_cors_headers(request)
             )
         except Exception as json_err:
             # Even JSON encoding failed - return minimal response
@@ -243,7 +291,7 @@ async def general_exception_handler(request: Request, exc: Exception):
                 content='{"error":"Serialization error","success":false}',
                 media_type="application/json",
                 status_code=200,
-                headers=dict(CORS_HEADERS)
+                headers=get_cors_headers(request)
             )
     
     if any(k in error_lower for k in ["mongodb", "authentication", "bad auth", "replica set", "timeout", "connection"]):
@@ -253,8 +301,8 @@ async def general_exception_handler(request: Request, exc: Exception):
             error_msg = "MongoDB connection timeout. IP whitelist change may still be propagating. Please wait 2-3 minutes."
         else:
             error_msg = "MongoDB connection failed. Please check your connection settings."
-        return json_with_cors(200, {"error": error_msg, "connected": False, "data": None})
-    return json_with_cors(200, {"error": error_msg, "success": False, "detail": error_msg})
+        return json_with_cors(200, {"error": error_msg, "connected": False, "data": None}, request)
+    return json_with_cors(200, {"error": error_msg, "success": False, "detail": error_msg}, request)
 
 # Include routers
 app.include_router(data.router, prefix="/api/data", tags=["Data"])
@@ -268,6 +316,10 @@ app.include_router(live_data.router, tags=["Live Data"])
 app.include_router(city_selection.router, tags=["City Selection"])
 app.include_router(live_stream.router)
 app.include_router(knowledge_graph.router)
+app.include_router(grounding.router)
+app.include_router(agent.router)
+app.include_router(voice.router)
+app.include_router(scenarios.router)
 
 
 @app.get("/")

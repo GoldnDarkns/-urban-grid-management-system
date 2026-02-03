@@ -1,16 +1,58 @@
 """
 Models API routes - ML model information and predictions.
+
+Data flow:
+- Simulated mode: uses MongoDB Atlas (Sim DB) for meter_readings and model_outputs.
+- City Live mode: uses local MongoDB for processed_zone_data and live APIs; model
+  prediction endpoints (TFT/LSTM) use Sim DB meter_readings for the primary use case (Simulated).
+- TFT is the primary predictor (real TFT model, Phase 0); LSTM is the comparison baseline.
+  Both are different models so TFT vs LSTM comparison in Analytics is meaningful.
 """
 from fastapi import APIRouter, HTTPException
-from typing import Optional
+from typing import Optional, Dict, Any
 import sys
 import os
 import json
 import base64
+from datetime import datetime, timezone, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 router = APIRouter()
+
+# -----------------------------------------------------------------------------
+# Phase 1a: LSTM + TFT model cache (load once, reuse) + pre-compute (model_outputs)
+# Phase 0: Real TFT model so TFT vs LSTM comparison is meaningful (two different models).
+# -----------------------------------------------------------------------------
+LSTM_MODEL_PATH = os.getenv("LSTM_MODEL_PATH", "src/models/lstm_demand_model.keras")
+TFT_MODEL_PATH = os.getenv("TFT_MODEL_PATH", "src/models/tft_demand_model.keras")
+MODEL_OUTPUTS_MAX_AGE_SECONDS = int(os.getenv("MODEL_OUTPUTS_MAX_AGE_SEC", "900"))  # 15 min
+_lstm_model = None
+_tft_model = None
+
+
+def _get_lstm_model():
+    """Load LSTM model once and cache in memory. Reused for all LSTM prediction requests."""
+    global _lstm_model
+    if _lstm_model is not None:
+        return _lstm_model
+    from tensorflow import keras
+    if not os.path.exists(LSTM_MODEL_PATH):
+        return None
+    _lstm_model = keras.models.load_model(LSTM_MODEL_PATH)
+    return _lstm_model
+
+
+def _get_tft_model():
+    """Load TFT model once and cache in memory. Reused for all TFT prediction requests."""
+    global _tft_model
+    if _tft_model is not None:
+        return _tft_model
+    from tensorflow import keras
+    if not os.path.exists(TFT_MODEL_PATH):
+        return None
+    _tft_model = keras.models.load_model(TFT_MODEL_PATH)
+    return _tft_model
 
 
 @router.get("/overview")
@@ -598,17 +640,25 @@ async def get_tft_details():
     }
 
 
+def _prediction_query_key(city_id: Optional[str], zone_id: Optional[str]) -> str:
+    """Build cache key so different city/zone get different cached results."""
+    c = (city_id or "").strip().lower()
+    z = (zone_id or "").strip()
+    if not c and not z:
+        return "default"
+    return f"{c}:{z}" if c else z
+
+
 @router.get("/tft/prediction")
-async def get_tft_prediction():
-    """Get TFT prediction. Currently uses LSTM backend until dedicated TFT model is deployed."""
-    return await get_lstm_prediction()
-
-
-@router.get("/lstm/prediction")
-async def get_lstm_prediction():
-    """Get sample LSTM prediction."""
+async def get_tft_prediction(
+    city_id: Optional[str] = None,
+    zone_id: Optional[str] = None,
+):
+    """
+    TFT prediction for Simulated mode. Uses real TFT model (Phase 0).
+    Cache is keyed by city_id and zone_id: changing city/zone returns a different result (or re-runs inference).
+    """
     try:
-        import numpy as np
         import tensorflow as tf
         _g = tf.config.list_physical_devices('GPU')
         if _g:
@@ -617,63 +667,228 @@ async def get_lstm_prediction():
                     tf.config.experimental.set_memory_growth(_d, True)
                 except RuntimeError:
                     pass
-        from tensorflow import keras
-        from sklearn.preprocessing import MinMaxScaler
         from src.db.mongo_client import get_db
-        from datetime import datetime, timezone
-        
-        # Load model
-        model = keras.models.load_model("src/models/lstm_demand_model.keras")
-        
-        # Get recent data
+
         db = get_db()
-        pipeline = [
-            {"$group": {
-                "_id": {
-                    "year": {"$year": "$ts"},
-                    "month": {"$month": "$ts"},
-                    "day": {"$dayOfMonth": "$ts"},
-                    "hour": {"$hour": "$ts"}
-                },
-                "total_kwh": {"$sum": "$kwh"}
-            }},
-            {"$sort": {"_id.year": -1, "_id.month": -1, "_id.day": -1, "_id.hour": -1}},
-            {"$limit": 48}
-        ]
-        
-        results = list(db.meter_readings.aggregate(pipeline))
-        results.reverse()
-        
-        if len(results) < 24:
+        query_key = _prediction_query_key(city_id, zone_id)
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=MODEL_OUTPUTS_MAX_AGE_SECONDS)
+        if db is not None:
+            cache_filter = {"type": "tft", "computed_at": {"$gte": cutoff}}
+            if query_key == "default":
+                cache_filter["$or"] = [{"query_key": "default"}, {"query_key": {"$exists": False}}]
+            else:
+                cache_filter["query_key"] = query_key
+            recent = db.model_outputs.find_one(
+                cache_filter,
+                sort=[("computed_at", -1)],
+                projection={"prediction": 1, "unit": 1, "horizon": 1, "input_hours": 1, "last_actual": 1, "_id": 0}
+            )
+            if recent and "prediction" in recent:
+                return {
+                    "prediction": recent["prediction"],
+                    "unit": recent.get("unit", "kWh"),
+                    "horizon": recent.get("horizon", "next hour"),
+                    "input_hours": recent.get("input_hours", 24),
+                    "last_actual": recent.get("last_actual")
+                }
+
+        result = _run_tft_inference(db, zone_id=zone_id, city_id=city_id)
+        if result is None:
+            if _get_tft_model() is None:
+                return {"error": "TFT model not found. Run once: python -m src.models.tft_demand_forecast"}
             return {"error": "Insufficient data for prediction"}
-        
-        # Prepare data
-        data = []
-        for r in results[-24:]:
-            data.append([
-                r["total_kwh"],
-                r["_id"]["hour"],
-                datetime(r["_id"]["year"], r["_id"]["month"], r["_id"]["day"]).weekday(),
-                r["_id"]["month"]
-            ])
-        
-        data = np.array(data)
-        scaler = MinMaxScaler()
-        scaled = scaler.fit_transform(data)
-        
-        X = scaled.reshape(1, 24, 4)
-        pred_scaled = model.predict(X, verbose=0)
-        
-        # Inverse transform
-        pred = pred_scaled[0, 0] * (scaler.data_max_[0] - scaler.data_min_[0]) + scaler.data_min_[0]
-        
-        return {
-            "prediction": round(float(pred), 2),
-            "unit": "kWh",
-            "horizon": "next hour",
-            "input_hours": 24,
-            "last_actual": round(data[-1, 0], 2)
-        }
+        if db is not None:
+            try:
+                db.model_outputs.insert_one({
+                    "type": "tft",
+                    "query_key": query_key,
+                    "computed_at": datetime.now(timezone.utc),
+                    **result
+                })
+            except Exception:
+                pass
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _run_lstm_inference(db, zone_id: Optional[str] = None, city_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """
+    Run LSTM inference on recent meter_readings (Sim DB). Returns result dict or None.
+    If zone_id (or city_id) is provided, only that scope is used so different city/zone => different prediction.
+    """
+    import numpy as np
+    from sklearn.preprocessing import MinMaxScaler
+    model = _get_lstm_model()
+    if model is None:
+        return None
+    if db is None:
+        return None
+    match_stage = {}
+    if zone_id:
+        match_stage["zone_id"] = zone_id
+    if city_id:
+        match_stage["city_id"] = city_id.lower()
+    pipeline = []
+    if match_stage:
+        pipeline.append({"$match": match_stage})
+    pipeline.extend([
+        {"$group": {
+            "_id": {
+                "year": {"$year": "$ts"},
+                "month": {"$month": "$ts"},
+                "day": {"$dayOfMonth": "$ts"},
+                "hour": {"$hour": "$ts"}
+            },
+            "total_kwh": {"$sum": "$kwh"}
+        }},
+        {"$sort": {"_id.year": -1, "_id.month": -1, "_id.day": -1, "_id.hour": -1}},
+        {"$limit": 48}
+    ])
+    results = list(db.meter_readings.aggregate(pipeline))
+    results.reverse()
+    if len(results) < 24:
+        return None
+    data = []
+    for r in results[-24:]:
+        data.append([
+            r["total_kwh"],
+            r["_id"]["hour"],
+            datetime(r["_id"]["year"], r["_id"]["month"], r["_id"]["day"]).weekday(),
+            r["_id"]["month"]
+        ])
+    data = np.array(data)
+    scaler = MinMaxScaler()
+    scaled = scaler.fit_transform(data)
+    X = scaled.reshape(1, 24, 4)
+    pred_scaled = model.predict(X, verbose=0)
+    pred = pred_scaled[0, 0] * (scaler.data_max_[0] - scaler.data_min_[0]) + scaler.data_min_[0]
+    return {
+        "prediction": round(float(pred), 2),
+        "unit": "kWh",
+        "horizon": "next hour",
+        "input_hours": 24,
+        "last_actual": round(data[-1, 0], 2)
+    }
+
+
+def _run_tft_inference(db, zone_id: Optional[str] = None, city_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """
+    Run TFT model inference on recent meter_readings (Sim DB). Returns result dict or None.
+    If zone_id (or city_id) is provided, only that scope is used so different city/zone => different prediction.
+    """
+    model = _get_tft_model()
+    if model is None:
+        return None
+    if db is None:
+        return None
+    import numpy as np
+    from sklearn.preprocessing import MinMaxScaler
+    match_stage = {}
+    if zone_id:
+        match_stage["zone_id"] = zone_id
+    if city_id:
+        match_stage["city_id"] = city_id.lower()
+    pipeline = []
+    if match_stage:
+        pipeline.append({"$match": match_stage})
+    pipeline.extend([
+        {"$group": {
+            "_id": {
+                "year": {"$year": "$ts"},
+                "month": {"$month": "$ts"},
+                "day": {"$dayOfMonth": "$ts"},
+                "hour": {"$hour": "$ts"}
+            },
+            "total_kwh": {"$sum": "$kwh"}
+        }},
+        {"$sort": {"_id.year": -1, "_id.month": -1, "_id.day": -1, "_id.hour": -1}},
+        {"$limit": 48}
+    ])
+    results = list(db.meter_readings.aggregate(pipeline))
+    results.reverse()
+    if len(results) < 24:
+        return None
+    data = []
+    for r in results[-24:]:
+        data.append([
+            r["total_kwh"],
+            r["_id"]["hour"],
+            datetime(r["_id"]["year"], r["_id"]["month"], r["_id"]["day"]).weekday(),
+            r["_id"]["month"]
+        ])
+    data = np.array(data)
+    scaler = MinMaxScaler()
+    scaled = scaler.fit_transform(data)
+    X = scaled.reshape(1, 24, 4)
+    pred_scaled = model.predict(X, verbose=0)
+    pred = pred_scaled[0, 0] * (scaler.data_max_[0] - scaler.data_min_[0]) + scaler.data_min_[0]
+    return {
+        "prediction": round(float(pred), 2),
+        "unit": "kWh",
+        "horizon": "next hour",
+        "input_hours": 24,
+        "last_actual": round(data[-1, 0], 2)
+    }
+
+
+@router.get("/lstm/prediction")
+async def get_lstm_prediction(
+    city_id: Optional[str] = None,
+    zone_id: Optional[str] = None,
+):
+    """
+    LSTM prediction for Simulated mode. Uses Sim DB meter_readings.
+    Cache is keyed by city_id and zone_id: changing city/zone returns a different result (or re-runs inference).
+    """
+    try:
+        import tensorflow as tf
+        _g = tf.config.list_physical_devices('GPU')
+        if _g:
+            for _d in _g:
+                try:
+                    tf.config.experimental.set_memory_growth(_d, True)
+                except RuntimeError:
+                    pass
+        from src.db.mongo_client import get_db
+
+        db = get_db()
+        query_key = _prediction_query_key(city_id, zone_id)
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=MODEL_OUTPUTS_MAX_AGE_SECONDS)
+        if db is not None:
+            cache_filter = {"type": "lstm", "computed_at": {"$gte": cutoff}}
+            if query_key == "default":
+                cache_filter["$or"] = [{"query_key": "default"}, {"query_key": {"$exists": False}}]
+            else:
+                cache_filter["query_key"] = query_key
+            recent = db.model_outputs.find_one(
+                cache_filter,
+                sort=[("computed_at", -1)],
+                projection={"prediction": 1, "unit": 1, "horizon": 1, "input_hours": 1, "last_actual": 1, "_id": 0}
+            )
+            if recent and "prediction" in recent:
+                return {
+                    "prediction": recent["prediction"],
+                    "unit": recent.get("unit", "kWh"),
+                    "horizon": recent.get("horizon", "next hour"),
+                    "input_hours": recent.get("input_hours", 24),
+                    "last_actual": recent.get("last_actual")
+                }
+
+        result = _run_lstm_inference(db, zone_id=zone_id, city_id=city_id)
+        if result is None:
+            return {"error": "Insufficient data for prediction"}
+        if db is not None:
+            try:
+                db.model_outputs.insert_one({
+                    "type": "lstm",
+                    "query_key": query_key,
+                    "computed_at": datetime.now(timezone.utc),
+                    **result
+                })
+            except Exception:
+                pass
+        return result
     except Exception as e:
         return {"error": str(e)}
 
@@ -683,6 +898,10 @@ async def get_model_image(model_name: str, image_type: str):
     """Get model visualization images as base64."""
     try:
         image_map = {
+            "tft": {
+                "training": "src/models/tft_training_history.png",
+                "predictions": "src/models/tft_predictions.png"
+            },
             "lstm": {
                 "training": "src/models/lstm_training_history.png",
                 "predictions": "src/models/lstm_predictions.png"

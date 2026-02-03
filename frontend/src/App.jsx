@@ -23,6 +23,8 @@ import AdminQueries from './pages/AdminQueries';
 import AdminData from './pages/AdminData';
 import Cost from './pages/Cost';
 import LiveStream from './pages/LiveStream';
+import ScenarioConsole from './pages/ScenarioConsole';
+import ScenarioBank from './pages/ScenarioBank';
 function AppLayout() {
   // Main app first: always Home + Navbar. City select/change via dropdown + processing popup.
   return (
@@ -52,6 +54,8 @@ function AppLayout() {
           <Route path="/incidents" element={<IncidentReports />} />
           <Route path="/cost" element={<Cost />} />
           <Route path="/live-stream" element={<LiveStream />} />
+          <Route path="/scenario-console" element={<ScenarioConsole />} />
+          <Route path="/scenario-bank" element={<ScenarioBank />} />
           <Route path="/admin/queries" element={<AdminQueries />} />
           <Route path="/admin/data" element={<AdminData />} />
         </Routes>

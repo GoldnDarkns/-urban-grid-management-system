@@ -107,6 +107,12 @@ export default function CityMap() {
   const [lstmStep, setLstmStep] = useState(0);
   const [gnnStep, setGnnStep] = useState(0);
   const svgRef = useRef(null);
+  // Pan/zoom: user-controlled camera so all zones can be seen and view is not static
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const panAtDragStart = useRef({ x: 0, y: 0 });
 
   // Get current city ID when in City mode
   useEffect(() => {
@@ -331,6 +337,35 @@ export default function CityMap() {
 
   const cascadeAffected = getCascadeAffected();
 
+  // Pan/zoom handlers: camera view so user can see all zones and move around
+  const handleWheel = useCallback((e) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.1 : 0.1;
+    setZoom((z) => Math.max(0.3, Math.min(3, z + delta)));
+  }, []);
+  const handleMouseDown = useCallback((e) => {
+    if (e.button !== 0) return;
+    panAtDragStart.current = { x: pan.x, y: pan.y };
+    setIsDragging(true);
+    setDragStart({ x: e.clientX, y: e.clientY });
+  }, [pan]);
+  const handleMouseMove = useCallback((e) => {
+    if (!isDragging) return;
+    setPan({
+      x: panAtDragStart.current.x + (e.clientX - dragStart.x),
+      y: panAtDragStart.current.y + (e.clientY - dragStart.y),
+    });
+  }, [isDragging, dragStart]);
+  const handleMouseUp = useCallback(() => setIsDragging(false), []);
+  const fitAllZones = useCallback(() => {
+    setPan({ x: 0, y: 0 });
+    setZoom(1);
+    if (svgRef.current?.closest('.map-svg-wrapper')) {
+      const wrapper = svgRef.current.closest('.map-svg-wrapper');
+      if (wrapper) wrapper.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+    }
+  }, []);
+
   return (
     <div className="citymap-page">
       <div className="map-header">
@@ -390,18 +425,34 @@ export default function CityMap() {
                 onClick={() => setSpeed(2)}
               >2x</button>
             </div>
+            <button
+              type="button"
+              className="mode-btn fit-all-btn"
+              onClick={fitAllZones}
+              title="Fit all zones in view and reset pan/zoom"
+            >
+              <Map size={16} /> Fit all zones
+            </button>
           </div>
         </div>
       </div>
 
       <div className="map-container">
         <div className="map-main">
-          <div className="map-svg-wrapper">
+          <div
+            className="map-svg-wrapper"
+            onMouseLeave={handleMouseUp}
+            onMouseUp={handleMouseUp}
+            onMouseMove={handleMouseMove}
+          >
           <svg 
             ref={svgRef}
             viewBox="0 0 720 460" 
-            className="city-svg"
+            className={`city-svg ${isDragging ? 'grabbing' : ''}`}
             preserveAspectRatio="xMidYMid meet"
+            onWheel={handleWheel}
+            onMouseDown={handleMouseDown}
+            style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
           >
             <defs>
               {/* Glow filter */}
@@ -431,6 +482,7 @@ export default function CityMap() {
               </linearGradient>
             </defs>
 
+            <g transform={`translate(${pan.x},${pan.y}) translate(360,230) scale(${zoom}) translate(-360,-230)`}>
             {/* Background grid */}
             <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
               <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1a1a25" strokeWidth="1"/>
@@ -632,11 +684,13 @@ export default function CityMap() {
                 )}
               </g>
             )}
+            </g>
           </svg>
           </div>
 
           {/* Legend */}
           <div className="map-legend">
+            <p className="map-view-hint">Drag to pan · Scroll to zoom · &quot;Fit all zones&quot; to reset</p>
             <h4>Legend</h4>
             <div className="legend-item">
               <span className="legend-dot high"></span>
@@ -1075,6 +1129,12 @@ export default function CityMap() {
           padding: 1rem;
         }
 
+        .map-view-hint {
+          font-size: 0.7rem;
+          color: var(--text-secondary);
+          margin-bottom: 0.5rem;
+          opacity: 0.9;
+        }
         .map-legend h4 {
           font-size: 0.75rem;
           color: var(--text-secondary);
@@ -1082,6 +1142,8 @@ export default function CityMap() {
           text-transform: uppercase;
           letter-spacing: 0.05em;
         }
+        .city-svg.grabbing { cursor: grabbing; }
+        .fit-all-btn { margin-left: 0.5rem; }
 
         .legend-item {
           display: flex;

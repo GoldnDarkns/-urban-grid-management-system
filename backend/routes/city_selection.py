@@ -77,6 +77,26 @@ class ProcessedDataResponse(BaseModel):
 _current_city: Optional[str] = None
 
 
+def _clean_for_json(obj, depth=0, max_depth=25):
+    """Recursively convert ObjectIds and datetime for JSON (Phase 2a state)."""
+    if depth > max_depth:
+        return str(obj) if obj is not None else None
+    if isinstance(obj, ObjectId):
+        return str(obj)
+    if isinstance(obj, dict):
+        if "$oid" in obj:
+            return str(obj["$oid"])
+        return {k: _clean_for_json(v, depth + 1, max_depth) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_clean_for_json(x, depth + 1, max_depth) for x in obj]
+    if hasattr(obj, "isoformat") and callable(getattr(obj, "isoformat")):
+        try:
+            return obj.isoformat()
+        except Exception:
+            return str(obj)
+    return obj
+
+
 @router.get("/list")
 async def list_cities():
     """List all available cities."""
@@ -121,6 +141,213 @@ async def get_current_city():
 
     city = CityService.get_city(_current_city)
     return _current_city_payload(city)
+
+
+@router.get("/state")
+async def get_city_state(
+    city_id: Optional[str] = Query(None, description="City ID (uses current if omitted)"),
+    zones_limit: int = Query(100, ge=1, le=500, description="Max zones in state"),
+    alerts_limit: int = Query(50, ge=1, le=200, description="Max alerts in state"),
+):
+    """
+    Phase 2a: Unified city state — one API returning aggregated grid, zones, alerts for AI and UI.
+    Built from MongoDB (processed_zone_data, alerts). Optional stress_index 0–100.
+    """
+    global _current_city
+    cid = (city_id or _current_city or "").strip().lower()
+    if not cid:
+        return {
+            "city_id": None,
+            "city_name": None,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "zones": [],
+            "alerts": [],
+            "grid": {"zone_count": 0, "high_risk_count": 0, "high_resilience_count": 0, "alert_count": 0},
+            "stress_index": None,
+            "why_summary": [],
+            "what_if_no_action": None,
+            "message": "No city selected",
+        }
+    city_config = CityService.get_city(cid)
+    db = get_city_db()
+    if db is None:
+        return {
+            "city_id": cid,
+            "city_name": getattr(city_config, "name", cid) if city_config else cid,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "zones": [],
+            "alerts": [],
+            "grid": {"zone_count": 0, "high_risk_count": 0, "high_resilience_count": 0, "alert_count": 0},
+            "stress_index": None,
+            "why_summary": [],
+            "what_if_no_action": None,
+            "message": "Database unavailable",
+        }
+    try:
+        # Latest per zone from processed_zone_data
+        cursor = db.processed_zone_data.find({"city_id": cid}).sort("timestamp", -1).limit(zones_limit * 2)
+        by_zone: Dict[str, Any] = {}
+        for doc in cursor:
+            zid = doc.get("zone_id")
+            if zid and zid not in by_zone:
+                by_zone[zid] = doc
+            if len(by_zone) >= zones_limit:
+                break
+        zones_list = []
+        high_risk_count = 0
+        high_resilience_count = 0
+        for zid, doc in list(by_zone.items())[:zones_limit]:
+            raw = doc.get("raw_data") or {}
+            ml = doc.get("ml_processed") or {}
+            risk = ml.get("risk_score") or {}
+            level = (risk.get("level") or "").lower()
+            if level == "high":
+                high_risk_count += 1
+            resilience = ml.get("resilience_score") or {}
+            if (resilience.get("level") or "").lower() == "high":
+                high_resilience_count += 1
+            zones_list.append(_clean_for_json({
+                "zone_id": zid,
+                "timestamp": doc.get("timestamp"),
+                "aqi": (raw.get("aqi") or {}).get("aqi"),
+                "weather": raw.get("weather"),
+                "traffic": raw.get("traffic"),
+                "demand_forecast": ml.get("demand_forecast"),
+                "risk_score": risk,
+                "resilience_score": resilience,
+                "anomaly_detection": ml.get("anomaly_detection"),
+                "recommendations_count": len(doc.get("recommendations") or []),
+            }))
+        # Recent alerts for city
+        alerts_cursor = db.alerts.find({"city_id": cid}).sort("ts", -1).limit(alerts_limit)
+        alerts_list = [_clean_for_json({
+            "zone_id": a.get("zone_id"),
+            "ts": a.get("ts"),
+            "level": a.get("level"),
+            "type": a.get("type"),
+            "message": a.get("message"),
+            "details": a.get("details"),
+        }) for a in alerts_cursor]
+        # Stress index 0–100: higher = more stress (high-risk zones + alerts)
+        stress = None
+        if zones_list or alerts_list:
+            n_high = high_risk_count
+            n_alerts = len(alerts_list)
+            n_zones = len(zones_list)
+            stress = min(100, int((n_high * 15 + min(n_alerts, 20) * 2) if n_zones else (n_alerts * 3)))
+
+        # P0: "Why this is happening" — structured reasons from zones and alerts
+        why_summary: List[str] = []
+        if high_risk_count > 0:
+            why_summary.append(f"{high_risk_count} zone(s) at high risk (demand, AQI, or traffic).")
+        if n_alerts := len(alerts_list):
+            why_summary.append(f"{n_alerts} active alert(s) in the city.")
+        aqi_high = sum(1 for z in zones_list if (z.get("aqi") or 0) > 150)
+        if aqi_high > 0:
+            why_summary.append(f"AQI > 150 (unhealthy) in {aqi_high} zone(s).")
+        anomaly_zones = [z.get("zone_id") for z in zones_list if (z.get("anomaly_detection") or {}).get("is_anomaly")]
+        if anomaly_zones:
+            why_summary.append(f"Anomaly detected in zone(s): {', '.join(anomaly_zones[:5])}{'...' if len(anomaly_zones) > 5 else ''}.")
+        if not why_summary and zones_list:
+            why_summary.append("City state is within normal range; no major stressors identified.")
+
+        # P0: "What if I do nothing?" — simple degradation summary
+        what_if_no_action: Optional[str] = None
+        if stress is not None and (zones_list or alerts_list):
+            if stress >= 60:
+                what_if_no_action = "If no action: stress is already elevated. High-risk zones may worsen; consider dispatching crews or shedding load in critical zones."
+            elif stress >= 30:
+                what_if_no_action = f"If no action: stress index ({stress}) may rise in the next 1–2 hours. {high_risk_count} high-risk zone(s) could degrade; recommend monitoring and preparing playbook actions."
+            else:
+                what_if_no_action = f"If no action: current stress ({stress}) is moderate. Continue monitoring; address alerts in priority order to prevent escalation."
+
+        return _clean_for_json({
+            "city_id": cid,
+            "city_name": getattr(city_config, "name", cid) if city_config else cid,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "zones": zones_list,
+            "alerts": alerts_list,
+            "grid": {
+                "zone_count": len(zones_list),
+                "high_risk_count": high_risk_count,
+                "high_resilience_count": high_resilience_count,
+                "alert_count": len(alerts_list),
+            },
+            "stress_index": stress,
+            "why_summary": why_summary,
+            "what_if_no_action": what_if_no_action,
+        })
+    except Exception as e:
+        return {
+            "city_id": cid,
+            "city_name": getattr(city_config, "name", cid) if city_config else cid,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "zones": [],
+            "alerts": [],
+            "grid": {"zone_count": 0, "high_risk_count": 0, "high_resilience_count": 0, "alert_count": 0},
+            "stress_index": None,
+            "why_summary": [],
+            "what_if_no_action": None,
+            "error": str(e),
+        }
+
+
+@router.get("/executive-summary")
+async def get_executive_summary(city_id: Optional[str] = Query(None, description="City ID (uses current if omitted)")):
+    """
+    P0: One JSON for emergency manager — stress index, why, what if no action, top failing zones, top actions.
+    """
+    global _current_city
+    cid = (city_id or _current_city or "").strip().lower()
+    state = await get_city_state(city_id=cid or None, zones_limit=50, alerts_limit=30)
+    if state.get("city_id") is None and not cid:
+        return {
+            "stress_index": None,
+            "why_summary": [],
+            "what_if_no_action": None,
+            "top_failing_zones": [],
+            "top_resilient_zones": [],
+            "top_recommended_actions": [],
+            "message": "No city selected",
+        }
+    zones = state.get("zones") or []
+    alerts = state.get("alerts") or []
+    # Top failing zones: high risk or anomaly
+    failing = []
+    for z in zones:
+        zid = z.get("zone_id")
+        risk = (z.get("risk_score") or {}).get("level") or ""
+        anomaly = (z.get("anomaly_detection") or {}).get("is_anomaly") or False
+        if risk == "high" or anomaly:
+            failing.append({"zone_id": zid, "risk_level": risk, "anomaly": anomaly})
+    top_failing_zones = failing[:5]
+    # P0: Top resilient zones — "which zones can absorb shock" (high resilience_score)
+    resilient = []
+    for z in zones:
+        res = z.get("resilience_score") or {}
+        score = res.get("score")
+        level = (res.get("level") or "").lower()
+        if score is not None and level == "high":
+            resilient.append({"zone_id": z.get("zone_id"), "resilience_score": score, "resilience_level": level})
+    resilient.sort(key=lambda x: x.get("resilience_score", 0), reverse=True)
+    top_resilient_zones = resilient[:5]
+    # Top recommended actions: from playbooks (we don't have a live actions API here; placeholder)
+    top_recommended_actions = [
+        {"id": "monitor_high_risk", "name": "Monitor high-risk zones", "priority": "high"},
+        {"id": "address_alerts", "name": "Address active alerts by priority", "priority": "high"},
+        {"id": "prepare_playbook", "name": "Prepare playbook actions for outage/AQI", "priority": "medium"},
+    ]
+    return _clean_for_json({
+        "stress_index": state.get("stress_index"),
+        "why_summary": state.get("why_summary") or [],
+        "what_if_no_action": state.get("what_if_no_action"),
+        "top_failing_zones": top_failing_zones,
+        "top_resilient_zones": top_resilient_zones,
+        "top_recommended_actions": top_recommended_actions,
+        "city_id": state.get("city_id"),
+        "city_name": state.get("city_name"),
+        "grid": state.get("grid"),
+    })
 
 
 @router.get("/costs")
@@ -227,12 +454,40 @@ async def select_city(city_id: str):
             error=str(e)
         )
 
+@router.post("/process/from-kafka")
+async def process_from_kafka(
+    city_id: Optional[str] = Query(None, description="City ID (uses current if not provided)")
+):
+    """
+    Phase 1b: Build processed_zone_data from Kafka-sourced raw_* collections (no API calls).
+    Returns summary; use when producer has already populated raw_weather, raw_aqi, raw_traffic.
+    """
+    if not city_id:
+        global _current_city
+        city_id = _current_city or "nyc"
+    try:
+        processor = DataProcessor(city_id=city_id)
+        results = await processor.process_from_kafka_raw(city_id)
+        results["db_status"] = "connected" if processor.db is not None else "disconnected"
+        return results
+    except Exception as e:
+        return {
+            "city_id": city_id,
+            "summary": {"total_zones": 0, "successful": 0, "failed": 0},
+            "zones_processed": [],
+            "error": str(e),
+            "source": "kafka_raw",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+
+
 @router.post("/process/all")
 async def process_all_zones(
     city_id: Optional[str] = Query(None, description="City ID (uses current if not provided)")
 ):
     """
     Process all zones for a city. Always 200 + JSON (never 500) so CORS works.
+    Calls Weather/AQI/Traffic APIs per zone. For Kafka-sourced path use POST /process/from-kafka.
     """
     if not city_id:
         global _current_city

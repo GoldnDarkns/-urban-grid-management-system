@@ -54,22 +54,30 @@ class BackgroundProcessor:
                 await self.process_once()
     
     async def process_once(self):
-        """Process all zones once."""
+        """Process all zones once. Phase 1b: try Kafka-sourced (raw_*) first; fall back to API path if no raw data."""
         try:
-            print(f"[BackgroundProcessor] Processing all zones for {self.city_id}...")
+            print(f"[BackgroundProcessor] Processing zones for {self.city_id}...")
             start_time = datetime.now(timezone.utc)
             
-            # Process all zones
-            results = await self.processor.process_all_zones()
+            # Phase 1b: try Kafka-sourced path first (no API calls)
+            kafka_results = await self.processor.process_from_kafka_raw(self.city_id)
+            kafka_ok = kafka_results.get("summary", {}).get("successful", 0)
             
-            # Process EIA data
+            if kafka_ok > 0:
+                elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
+                print(f"[BackgroundProcessor] [OK] Kafka raw path: {kafka_ok} zones in {elapsed:.2f}s")
+            else:
+                # Fall back to API path (process_all_zones calls Weather/AQI/Traffic APIs)
+                print(f"[BackgroundProcessor] No Kafka raw data for {self.city_id}; using API path...")
+                results = await self.processor.process_all_zones()
+                elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
+                print(f"[BackgroundProcessor] [OK] API path completed in {elapsed:.2f}s")
+                print(f"[BackgroundProcessor]   - Zones processed: {results.get('summary', {}).get('successful', 0)}")
+            
+            # Process EIA data (API call; optional to skip if not needed)
             city = CityService.get_city(self.city_id)
             if city:
                 await self.processor.process_eia_data(city.state)
-            
-            elapsed = (datetime.now(timezone.utc) - start_time).total_seconds()
-            print(f"[BackgroundProcessor] [OK] Completed in {elapsed:.2f}s")
-            print(f"[BackgroundProcessor]   - Zones processed: {results.get('summary', {}).get('successful', 0)}")
             
         except Exception as e:
             print(f"[BackgroundProcessor] [ERROR] Error: {e}")

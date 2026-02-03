@@ -147,7 +147,7 @@ export default function Insights() {
           dataAPI.getAlerts(30),
           analyticsAPI.getAlertsSummary(),
           analyticsAPI.getAnomalies(2.5, 10),
-          modelsAPI.getLSTMPrediction().catch(() => ({ data: null })),
+          modelsAPI.getLSTMPrediction(null).catch(() => ({ data: null })),
           modelsAPI.getOverview().catch(() => ({ data: null }))
         ]);
         setZoneRisk(riskRes.data.data || []);

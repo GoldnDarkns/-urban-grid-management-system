@@ -90,10 +90,20 @@ export const modelsAPI = {
   getOverview: () => api.get('/models/overview'),
   getLSTMDetails: () => api.get('/models/lstm'),
   getTFTDetails: () => api.get('/models/tft').catch(() => ({ data: null })),
-  getTFTPrediction: () => api.get('/models/tft/prediction').catch(() => api.get('/models/lstm/prediction')),
+  getTFTPrediction: (cityId = null, zoneId = null) => {
+    const params = {};
+    if (cityId) params.city_id = cityId;
+    if (zoneId) params.zone_id = zoneId;
+    return api.get('/models/tft/prediction', { params }).catch(() => api.get('/models/lstm/prediction', { params }));
+  },
   getAutoencoderDetails: () => api.get('/models/autoencoder'),
   getGNNDetails: () => api.get('/models/gnn'),
-  getLSTMPrediction: () => api.get('/models/lstm/prediction'),
+  getLSTMPrediction: (cityId = null, zoneId = null) => {
+    const params = {};
+    if (cityId) params.city_id = cityId;
+    if (zoneId) params.zone_id = zoneId;
+    return api.get('/models/lstm/prediction', { params });
+  },
   getModelImage: (modelName, imageType) => 
     api.get(`/models/images/${modelName}/${imageType}`),
 };
@@ -163,6 +173,18 @@ export const cityAPI = {
     api.get('/city/processing-summary', { params: cityId ? { city_id: cityId } : {} }),
   getCosts: (cityId = null) =>
     api.get('/city/costs', { params: cityId ? { city_id: cityId } : {} }),
+  /** Phase 2a: Unified city state (zones, alerts, grid, stress_index, why_summary, what_if_no_action) */
+  getCityState: (cityId = null, zonesLimit = 100, alertsLimit = 50) =>
+    api.get('/city/state', {
+      params: {
+        ...(cityId ? { city_id: cityId } : {}),
+        zones_limit: zonesLimit,
+        alerts_limit: alertsLimit,
+      },
+    }),
+  /** P0: Executive summary — stress index, why, what if no action, top failing zones */
+  getExecutiveSummary: (cityId = null) =>
+    api.get('/city/executive-summary', { params: cityId ? { city_id: cityId } : {} }),
 };
 
 // Live APIs (311, etc.) – used in City mode
@@ -174,6 +196,41 @@ export const liveAPI = {
 // Live Stream (Kafka → MongoDB) – for Live Stream tab
 export const liveStreamAPI = {
   getLiveStream: (limit = 100) => api.get('/live-stream', { params: { limit } }),
+};
+
+// Phase 2c: Domain-specific AI agent (Scenario Console)
+export const agentAPI = {
+  start: (body = {}) => api.post('/agent/start', body),
+  message: (body) => api.post('/agent/message', body),
+  getRuns: (sessionId = null) => api.get('/agent/runs', { params: sessionId ? { session_id: sessionId } : {} }),
+  getRun: (runId) => api.get(`/agent/runs/${runId}`),
+};
+
+// Phase 3a: Scenario bank & evaluation
+export const scenariosAPI = {
+  list: (cityId = null) => api.get('/scenarios', { params: cityId ? { city_id: cityId } : {} }),
+  create: (body) => api.post('/scenarios', body),
+  get: (id) => api.get(`/scenarios/${id}`),
+  update: (id, body) => api.put(`/scenarios/${id}`, body),
+  delete: (id) => api.delete(`/scenarios/${id}`),
+  run: (id, cityId = null) => api.post(`/scenarios/${id}/run`, null, { params: cityId ? { city_id: cityId } : {} }),
+  runBatch: (body = {}) => api.post('/scenarios/run-batch', body),
+  runHistory: (scenarioId = null, limit = 30) => api.get('/scenarios/runs/history', { params: { scenario_id: scenarioId, limit } }),
+};
+
+// Phase 4: Voice (Deepgram STT/TTS) — proxy via backend so API key stays server-side
+export const voiceAPI = {
+  config: () => api.get('/voice/config'),
+  transcribe: (audioBlob, contentType = 'audio/webm') => {
+    const form = new FormData();
+    form.append('audio', audioBlob, 'recording.webm');
+    return api.post('/voice/transcribe', form, {
+      headers: { 'Content-Type': undefined },
+      timeout: 35000,
+    });
+  },
+  synthesize: (text) =>
+    api.post('/voice/synthesize', { text }, { responseType: 'blob', timeout: 20000 }),
 };
 
 // Knowledge Graph (Neo4j) – risk reasoning and graph viz

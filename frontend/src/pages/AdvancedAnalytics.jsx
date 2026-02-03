@@ -190,12 +190,13 @@ export default function AdvancedAnalytics() {
     setOverviewError(null);
     setLoading(true);
     try {
-      const timeout = (ms) => new Promise((_, rej) => setTimeout(() => rej(new Error('Request timed out after 20s')), ms));
+      const timeout = (ms) => new Promise((_, rej) => setTimeout(() => rej(new Error('Request timed out')), ms));
+      const TIMEOUT_MS = 45000; // 45s when backend is busy with city processing
 
       if (mode === 'city' && currentCityId) {
         const processedRes = await Promise.race([
           cityAPI.getProcessedData(currentCityId, null, 100),
-          timeout(20000)
+          timeout(TIMEOUT_MS)
         ]);
         const zones = processedRes.data?.zones || [];
         const tftOutputs = zones.map(z => ({
@@ -248,14 +249,18 @@ export default function AdvancedAnalytics() {
         // Sim mode or city mode without city selected: still load model overview so we show descriptions
         const response = await Promise.race([
           modelsAPI.getOverview(),
-          timeout(20000)
+          timeout(TIMEOUT_MS)
         ]);
         setModelsOverview(response.data);
         if (!(mode === 'city' && currentCityId)) setLiveMLOutputs(null);
       }
     } catch (error) {
       console.error('Error fetching models overview:', error);
-      setOverviewError(error?.message || 'Failed to load model overview. Check backend and retry.');
+      const status = error?.response?.status;
+      const msg = status === 502 || status === 504
+        ? 'Backend unavailable (502/504). Ensure Docker is running and backend is up: docker-compose ps'
+        : (error?.message || 'Failed to load model overview. Check backend and retry.');
+      setOverviewError(msg);
       setModelsOverview(null);
       setLiveMLOutputs(null);
     } finally {
@@ -282,8 +287,8 @@ export default function AdvancedAnalytics() {
           <p>{mode === 'city' && currentCityId ? 'Loading live ML outputs…' : 'Loading model overview…'}</p>
           <p className="loading-hint">
             {mode === 'city' && currentCityId
-              ? 'Fetching processed_zone_data (TFT, Autoencoder, GNN outputs per zone). May take up to 20s.'
-              : 'Fetching model overview (TFT, LSTM, Autoencoder, GNN, ARIMA, Prophet). May take up to 20s. If it hangs, check backend.'}
+              ? 'Fetching processed_zone_data (TFT, Autoencoder, GNN outputs per zone). May take up to 45s.'
+              : 'Fetching model overview (TFT, LSTM, Autoencoder, GNN, ARIMA, Prophet). May take up to 45s. If you see 502, restart backend: docker-compose restart backend'}
           </p>
         </div>
       );

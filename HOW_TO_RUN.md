@@ -76,6 +76,7 @@ copy .env.example .env
 
 - You can leave `.env` as is for City Live mode (local MongoDB in Docker).  
 - **Simulated mode:** For the Simulated part of the website to work, set **MongoDB Atlas** in `.env`: `SIM_MONGO_URI` and `SIM_MONGO_DB` to your Atlas connection string and database name (e.g. copy from `MONGO_URI` / `MONGO_DB`). Without this, Simulated mode will show "MongoDB disconnected" until you add these and restart the backend.
+- **Voice (Phase 4):** For Scenario Console voice (talk to agent, agent speaks reply), set `DEEPGRAM_API_KEY` in `.env` to your Deepgram API key (get one at https://console.deepgram.com). If unset, only Text mode is available.
 
 ### Step 4: Start Docker Desktop
 
@@ -189,7 +190,26 @@ docker-compose up -d --build
 
 ---
 
-## 10. ERR_CONNECTION_RESET or API calls failing
+## 10. 502 Bad Gateway or “Could not load model overview”
+
+If the browser shows **502 (Bad Gateway)** for `/api/models/overview`, `/api/city/current`, `/api/analytics/...`, etc., the **frontend (Nginx) is proxying to the backend but the backend is not responding**. Common causes: backend not ready yet, backend crashed, or backend overloaded.
+
+1. **Wait a minute after starting:** After `docker-compose up`, the backend may take 30–60 seconds to become ready (startup + healthcheck). The frontend is configured to wait for the backend to be healthy before starting.
+2. **Check backend status:**  
+   `docker-compose ps` → backend should be **Up** and **(healthy)**.
+3. **Check backend logs:**  
+   `docker-compose logs backend --tail 80`  
+   Look for Python tracebacks or “Address already in use”.
+4. **Restart backend:**  
+   `docker-compose restart backend`  
+   Wait ~30 s, then hard-refresh the app (Ctrl+Shift+R).
+5. **Full restart:**  
+   `docker-compose down` then `docker-compose up -d --build`  
+   Then wait 1–2 minutes before opening http://localhost.
+
+---
+
+## 11. ERR_CONNECTION_RESET or API calls failing
 
 If the browser shows **Failed to load resource: net::ERR_CONNECTION_RESET** for `/api/city/current`, `/api/city/processing-summary`, `/api/ai/recommendations`, etc., the **backend is closing the connection** (crash, timeout, or restart).
 
@@ -208,7 +228,7 @@ Once the backend stays **Up** and responds to [http://localhost:8000/api/health]
 
 ---
 
-## 11. Quick reference: what runs where
+## 12. Quick reference: what runs where
 
 - **App (UI):** http://localhost  
 - **API:** http://localhost:8000  

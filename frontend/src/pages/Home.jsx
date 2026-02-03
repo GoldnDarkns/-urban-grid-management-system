@@ -18,15 +18,18 @@ export default function Home() {
   const [layerGlows, setLayerGlows] = useState({ data: 0, ml: 0, api: 0, ui: 0 });
   const [processingSummary, setProcessingSummary] = useState(null);
   const [currentCity, setCurrentCity] = useState(null);
+  const [executiveSummary, setExecutiveSummary] = useState(null);
   const archRef = useRef(null);
 
   useEffect(() => {
     if (mode === 'city') {
       cityAPI.getCurrentCity().then((r) => setCurrentCity(r.data)).catch(() => {});
       cityAPI.getProcessingSummary().then((r) => setProcessingSummary(r.data)).catch(() => {});
+      cityAPI.getExecutiveSummary().then((r) => setExecutiveSummary(r.data)).catch(() => setExecutiveSummary(null));
     } else {
       setCurrentCity(null);
       setProcessingSummary(null);
+      setExecutiveSummary(null);
     }
   }, [mode]);
 
@@ -35,6 +38,7 @@ export default function Home() {
     const onCityChanged = () => {
       cityAPI.getCurrentCity().then((r) => setCurrentCity(r.data)).catch(() => {});
       cityAPI.getProcessingSummary().then((r) => setProcessingSummary(r.data)).catch(() => {});
+      cityAPI.getExecutiveSummary().then((r) => setExecutiveSummary(r.data)).catch(() => setExecutiveSummary(null));
     };
     window.addEventListener('ugms-city-changed', onCityChanged);
     window.addEventListener('ugms-city-processed', onCityChanged);
@@ -273,6 +277,64 @@ export default function Home() {
               <span>Live APIs: Weather, AQI, Traffic, Population, EIA</span>
               <span>ML: TFT, LSTM (comparison), Autoencoder, GNN, ARIMA, Prophet</span>
               <span className="processed-where">Results on: <Link to="/data">Data</Link>, <Link to="/analytics">Analytics</Link>, <Link to="/advanced-analytics">Advanced</Link>, <Link to="/ai-recommendations">AI Recs</Link></span>
+            </div>
+          </motion.div>
+        </section>
+      )}
+
+      {/* P0: Executive summary — stress index, why, what if no action (City Live) */}
+      {mode === 'city' && executiveSummary && (
+        <section className="status-section container">
+          <motion.div
+            className="status-card executive-summary-card"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
+          >
+            <div className="status-header">
+              <Brain size={24} />
+              <h2>Executive summary</h2>
+            </div>
+            <div className="executive-summary-grid">
+              {executiveSummary.stress_index != null && (
+                <div className="executive-stress">
+                  <span className="executive-label">City stress index</span>
+                  <span className={`executive-value stress-${executiveSummary.stress_index >= 60 ? 'high' : executiveSummary.stress_index >= 30 ? 'medium' : 'low'}`}>
+                    {executiveSummary.stress_index}/100
+                  </span>
+                </div>
+              )}
+              {executiveSummary.why_summary?.length > 0 && (
+                <div className="executive-why">
+                  <span className="executive-label">Why this is happening</span>
+                  <ul>
+                    {executiveSummary.why_summary.map((line, i) => (
+                      <li key={i}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {executiveSummary.what_if_no_action && (
+                <div className="executive-whatif">
+                  <span className="executive-label">What if I do nothing?</span>
+                  <p>{executiveSummary.what_if_no_action}</p>
+                </div>
+              )}
+              {(executiveSummary.top_resilient_zones?.length > 0 || executiveSummary.grid?.high_resilience_count > 0) && (
+                <div className="executive-resilience">
+                  <span className="executive-label">Zone resilience (can absorb shock)</span>
+                  {executiveSummary.grid?.high_resilience_count != null && (
+                    <p className="executive-resilience-count">{executiveSummary.grid.high_resilience_count} zone(s) with high resilience</p>
+                  )}
+                  {executiveSummary.top_resilient_zones?.length > 0 && (
+                    <ul className="executive-resilient-list">
+                      {executiveSummary.top_resilient_zones.slice(0, 5).map((z, i) => (
+                        <li key={z.zone_id || i}>{z.zone_id} — {z.resilience_score ?? z.resilience_level}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
             </div>
           </motion.div>
         </section>
@@ -559,6 +621,21 @@ export default function Home() {
         .processed-where { margin-top: 0.25rem; }
         .processed-where a { color: var(--accent-secondary); text-decoration: none; }
         .processed-where a:hover { text-decoration: underline; color: var(--accent-primary); }
+
+        .executive-summary-card .status-header { margin-bottom: 1rem; }
+        .executive-summary-grid { display: grid; gap: 1rem; }
+        .executive-stress, .executive-why, .executive-whatif { padding: 0.75rem; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border-color); }
+        .executive-label { display: block; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); margin-bottom: 0.35rem; }
+        .executive-value { font-size: 1.25rem; font-weight: 600; }
+        .executive-value.stress-low { color: var(--accent-primary); }
+        .executive-value.stress-medium { color: #f59e0b; }
+        .executive-value.stress-high { color: #ef4444; }
+        .executive-why ul, .executive-whatif p { margin: 0; padding-left: 1rem; font-size: 0.9rem; color: var(--text-primary); }
+        .executive-why li { margin-bottom: 0.25rem; }
+        .executive-resilience { padding: 0.75rem; background: var(--bg-secondary); border-radius: 8px; border: 1px solid var(--border-color); }
+        .executive-resilience-count { margin: 0 0 0.35rem 0; font-size: 0.9rem; color: var(--text-primary); }
+        .executive-resilient-list { margin: 0; padding-left: 1rem; font-size: 0.9rem; color: var(--accent-primary); }
+        .executive-resilient-list li { margin-bottom: 0.2rem; }
 
         .features-section {
           margin-bottom: 3rem;

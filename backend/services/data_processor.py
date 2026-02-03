@@ -64,11 +64,14 @@ class DataProcessor:
         }
         
         try:
-            # Step 1: Fetch Live API Data
+            # Step 1: Fetch Live API Data (run sync calls in thread pool so event loop stays responsive)
             print(f"[Processing] Fetching live data for {zone_id}...")
-            
-            # Weather data (pass city_id for fallback when API fails)
-            weather = self.weather_service.get_current_weather(lat, lon, self.city_id)
+            loop = asyncio.get_event_loop()
+            weather, aqi, traffic = await asyncio.gather(
+                loop.run_in_executor(None, lambda: self.weather_service.get_current_weather(lat, lon, self.city_id)),
+                loop.run_in_executor(None, lambda: self.aqi_service.get_current_aqi(lat, lon)),
+                loop.run_in_executor(None, lambda: self.traffic_service.get_traffic_flow(lat, lon)),
+            )
             if weather:
                 results["raw_data"]["weather"] = weather
                 if self.db is not None:
@@ -78,9 +81,6 @@ class DataProcessor:
                         "timestamp": datetime.now(timezone.utc),
                         **weather
                     })
-            
-            # AQI data
-            aqi = self.aqi_service.get_current_aqi(lat, lon)
             if aqi:
                 results["raw_data"]["aqi"] = aqi
                 if self.db is not None:
@@ -90,9 +90,6 @@ class DataProcessor:
                         "timestamp": datetime.now(timezone.utc),
                         **aqi
                     })
-            
-            # Traffic data
-            traffic = self.traffic_service.get_traffic_flow(lat, lon)
             if traffic:
                 results["raw_data"]["traffic"] = traffic
                 if self.db is not None:
@@ -295,6 +292,19 @@ class DataProcessor:
                     "factors": risk_factors,
                     "timestamp": datetime.now(timezone.utc).isoformat()
                 }
+                # P0: Zone Resilience Score — inverse of risk; "which zones can absorb shock"
+                resilience_score = max(0, min(100, 100 - risk_score))
+                if resilience_score >= 70:
+                    resilience_level = "high"
+                elif resilience_score >= 40:
+                    resilience_level = "medium"
+                else:
+                    resilience_level = "low"
+                ml_results["resilience_score"] = {
+                    "score": resilience_score,
+                    "level": resilience_level,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
                 
                 # 4. AQI Prediction (based on weather + traffic)
                 if raw_data.get("weather") and raw_data.get("traffic"):
@@ -395,6 +405,19 @@ class DataProcessor:
                     "score": risk_score,
                     "level": risk_level,
                     "factors": risk_factors,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }
+                # P0: Zone Resilience Score — inverse of risk; "which zones can absorb shock"
+                resilience_score = max(0, min(100, 100 - risk_score))
+                if resilience_score >= 70:
+                    resilience_level = "high"
+                elif resilience_score >= 40:
+                    resilience_level = "medium"
+                else:
+                    resilience_level = "low"
+                ml_results["resilience_score"] = {
+                    "score": resilience_score,
+                    "level": resilience_level,
                     "timestamp": datetime.now(timezone.utc).isoformat()
                 }
                 
@@ -684,6 +707,113 @@ class DataProcessor:
         
         return alerts
     
+    def _read_raw_for_city(self, city_id: str) -> Dict[str, Dict[str, Any]]:
+        """
+        Phase 1b: Read raw_weather, raw_aqi, raw_traffic from MongoDB (filled by Kafka consumer).
+        Returns zone_id -> { "weather": {...}, "aqi": {...}, "traffic": {...} }.
+        """
+        out: Dict[str, Dict[str, Any]] = {}
+        if self.db is None:
+            return out
+        cid = (city_id or self.city_id).strip().lower()
+        for coll_name, key in [("raw_weather", "weather"), ("raw_aqi", "aqi"), ("raw_traffic", "traffic")]:
+            if not hasattr(self.db, coll_name):
+                continue
+            coll = getattr(self.db, coll_name)
+            try:
+                for doc in coll.find({"city_id": cid}):
+                    zid = doc.get("zone_id")
+                    if not zid:
+                        continue
+                    if zid not in out:
+                        out[zid] = {"weather": None, "aqi": None, "traffic": None}
+                    payload = doc.get("payload") or doc
+                    out[zid][key] = payload
+            except Exception as e:
+                print(f"[Processing] [WARN] _read_raw_for_city {coll_name}: {e}")
+        return out
+    
+    async def process_from_kafka_raw(self, city_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Phase 1b: Build processed_zone_data from Kafka-sourced raw_* collections (no API calls).
+        Reads raw_weather, raw_aqi, raw_traffic from MongoDB; runs heuristics/ML; writes processed_zone_data.
+        """
+        cid = (city_id or self.city_id).strip().lower()
+        prev_city = self.city_id
+        self.city_id = cid
+        city_config = CityService.get_city(cid)
+        if not city_config:
+            return {"error": f"City {cid} not found"}
+        num_zones = getattr(city_config, "num_zones", 20)
+        zones = CityService.calculate_zone_coordinates(cid, num_zones=num_zones, use_reverse_geocode=False)
+        raw_by_zone = self._read_raw_for_city(cid)
+        results = {
+            "city_id": cid,
+            "city_name": city_config.name,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "source": "kafka_raw",
+            "zones_processed": [],
+            "summary": {"total_zones": len(zones), "successful": 0, "failed": 0},
+        }
+        for zone in zones:
+            zid = zone["zone_id"]
+            raw_data = raw_by_zone.get(zid) or {}
+            weather = raw_data.get("weather")
+            aqi = raw_data.get("aqi")
+            traffic = raw_data.get("traffic")
+            if not any([weather, aqi, traffic]):
+                results["summary"]["failed"] += 1
+                results["zones_processed"].append({"zone_id": zid, "status": "skipped", "reason": "no raw data"})
+                continue
+            try:
+                ml_results = await self.process_with_ml_models(zid, {"weather": weather, "aqi": aqi, "traffic": traffic})
+                recommendations = self.generate_recommendations(zid, {"weather": weather, "aqi": aqi, "traffic": traffic}, ml_results)
+                grid_priority = self._compute_grid_priority(zid, {"weather": weather, "aqi": aqi, "traffic": traffic}, ml_results)
+                alerts_created = await self._create_alerts_from_processing(zid, {"weather": weather, "aqi": aqi, "traffic": traffic, "grid_priority": grid_priority}, ml_results)
+                if self.db is not None:
+                    from bson import ObjectId
+                    def _clean(obj):
+                        if isinstance(obj, ObjectId):
+                            return str(obj)
+                        if isinstance(obj, dict):
+                            return {k: _clean(v) for k, v in obj.items()}
+                        if isinstance(obj, list):
+                            return [_clean(x) for x in obj]
+                        if hasattr(obj, "isoformat") and callable(getattr(obj, "isoformat")):
+                            return obj.isoformat()
+                        return obj
+                    self.db.processed_zone_data.insert_one({
+                        "zone_id": zid,
+                        "timestamp": datetime.now(timezone.utc),
+                        "city_id": cid,
+                        "raw_data": _clean({"weather": weather, "aqi": aqi, "traffic": traffic, "grid_priority": grid_priority}),
+                        "ml_processed": _clean(ml_results),
+                        "recommendations": _clean(recommendations),
+                    })
+                results["summary"]["successful"] += 1
+                results["zones_processed"].append({"zone_id": zid, "status": "success", "recommendations_count": len(recommendations)})
+            except Exception as e:
+                results["summary"]["failed"] += 1
+                results["zones_processed"].append({"zone_id": zid, "status": "failed", "error": str(e)})
+        if self.db is not None and results["summary"]["successful"] > 0:
+            try:
+                self.db.city_processing_summary.insert_one(results)
+                info_alert = {
+                    "zone_id": "system",
+                    "city_id": cid,
+                    "ts": datetime.now(timezone.utc),
+                    "level": "info",
+                    "type": "processing_complete",
+                    "message": f"City {cid.upper()} processing (Kafka raw) completed. {results['summary']['successful']} zones.",
+                    "details": {"source": "kafka_raw", **results["summary"]},
+                    "source": "ml_processing",
+                }
+                self.db.alerts.insert_one(info_alert)
+            except Exception as e:
+                print(f"[Processing] [WARN] Could not save Kafka processing summary: {e}")
+        self.city_id = prev_city
+        return results
+    
     async def process_all_zones(self) -> Dict[str, Any]:
         """
         Process all zones for the current city.
@@ -700,7 +830,8 @@ class DataProcessor:
             return {"error": f"City {self.city_id} not found"}
 
         # Limit concurrent zones to avoid API rate limits (Weather, AQI, Traffic)
-        CONCURRENT_ZONES = 5
+        # Sync API calls run in thread pool so event loop stays responsive for /api/models/overview etc.
+        CONCURRENT_ZONES = 8
 
         # Get zone coordinates for this city (no reverse geocoding: avoids N× Nominatim calls + 504)
         num_zones = getattr(self.city_config, "num_zones", 20) if self.city_config else 20

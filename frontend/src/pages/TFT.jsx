@@ -6,19 +6,28 @@ import {
   Settings, AlertCircle, Sigma
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
-import { modelsAPI } from '../services/api';
+import { modelsAPI, cityAPI } from '../services/api';
 
 export default function TFT() {
   const [prediction, setPrediction] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState('overview');
+  const [currentCityId, setCurrentCityId] = useState(null);
 
   useEffect(() => {
-    (modelsAPI.getTFTPrediction ? modelsAPI.getTFTPrediction() : modelsAPI.getLSTMPrediction())
+    cityAPI.getCurrentCity()
+      .then((r) => setCurrentCityId(r.data?.city_id || null))
+      .catch(() => setCurrentCityId(null));
+  }, []);
+
+  useEffect(() => {
+    setLoading(true);
+    const cityId = currentCityId || null;
+    (modelsAPI.getTFTPrediction ? modelsAPI.getTFTPrediction(cityId) : modelsAPI.getLSTMPrediction(cityId))
       .then((res) => setPrediction(res?.data))
       .catch(() => setPrediction(null))
       .finally(() => setLoading(false));
-  }, []);
+  }, [currentCityId]);
 
   const sections = [
     { id: 'overview', label: 'Overview', icon: Brain },

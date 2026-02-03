@@ -32,7 +32,7 @@ export default function ModelComparison() {
     setLoading(true);
     try {
       const timeout = (ms) => new Promise((_, rej) => setTimeout(() => rej(new Error('Request timed out')), ms));
-      const res = await Promise.race([modelsAPI.getOverview(), timeout(15000)]);
+      const res = await Promise.race([modelsAPI.getOverview(), timeout(45000)]);
       if (res.data?.models) {
         const tft = res.data.models.find(m => m.id === 'tft');
         if (tft?.metrics) {

@@ -6,7 +6,7 @@ import {
   Settings, CheckCircle, AlertCircle, Sigma
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, BarChart, Bar, ScatterChart, Scatter, ComposedChart } from 'recharts';
-import { modelsAPI } from '../services/api';
+import { modelsAPI, cityAPI } from '../services/api';
 import ModelArchitecture from '../components/ModelArchitecture';
 import { LSTMSequentialAnimation, LSTMCellAnimation } from '../components/LSTMArchitectureAnimation';
 import CodeBlock from '../components/CodeBlock';
@@ -19,16 +19,25 @@ export default function LSTM() {
   const [predictionsImage, setPredictionsImage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState('overview');
+  const [currentCityId, setCurrentCityId] = useState(null);
 
   useEffect(() => {
-    fetchData();
+    cityAPI.getCurrentCity()
+      .then((r) => setCurrentCityId(r.data?.city_id || null))
+      .catch(() => setCurrentCityId(null));
   }, []);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchData();
+  }, [currentCityId]);
 
   const fetchData = async () => {
     try {
+      const cityId = currentCityId ?? null;
       const [detailsRes, predRes] = await Promise.all([
         modelsAPI.getLSTMDetails(),
-        modelsAPI.getLSTMPrediction()
+        modelsAPI.getLSTMPrediction(cityId)
       ]);
       setDetails(detailsRes.data);
       setPrediction(predRes.data);

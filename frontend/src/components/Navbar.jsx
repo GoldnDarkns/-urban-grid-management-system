@@ -2,52 +2,58 @@ import { useState, useRef, useEffect, Fragment } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Home, Database, BarChart3, Brain, 
-  Activity, Network, Zap, Box, FileText, Eye, AlertTriangle, GitCompare, Map, BookOpen, ClipboardList,
-  ChevronLeft, ChevronRight, DollarSign, Radio
+  Activity, Network, Zap, Box, FileText, Eye, GitCompare, Map, BookOpen, ClipboardList,
+  ChevronLeft, ChevronRight, DollarSign, Radio, MessageSquare, ListChecks
 } from 'lucide-react';
 import CitySelector from './CitySelector';
 import ModeSwitcher from './ModeSwitcher';
 import { useAppMode } from '../utils/useAppMode';
 
+// Phase 1c: City Live — Home, City Selection (in context), Live Stream, Analytics, Models, Knowledge Graph (in Advanced), AI Recs, Incidents, Maps, Reports
 const CITY_NAV = [
-  // Core Pages
   { path: '/', label: 'Home', icon: Home, order: 1, group: 'core', tooltip: 'System overview, architecture, real-time stats' },
   { path: '/guide', label: 'Guide', icon: BookOpen, order: 2, group: 'core', tooltip: 'How the system works, data flow, page guide' },
   { path: '/data', label: 'Data', icon: Database, order: 3, group: 'core', tooltip: 'MongoDB collections, zones, alerts' },
-  // Analytics Group
   { path: '/analytics', label: 'Analytics', icon: BarChart3, order: 4, group: 'analytics', tooltip: 'Demand, AQI, correlations, anomalies' },
-  { path: '/advanced-analytics', label: 'Advanced', icon: Brain, order: 5, group: 'analytics', tooltip: 'ML models (TFT, LSTM comparison, GNN, etc.) & MongoDB queries' },
+  { path: '/advanced-analytics', label: 'Advanced', icon: Brain, order: 5, group: 'analytics', tooltip: 'Models, KG, MongoDB queries' },
   { path: '/ai-recommendations', label: 'AI Recs', icon: Brain, order: 6, group: 'analytics', tooltip: 'AI-powered prioritized recommendations' },
   { path: '/insights', label: 'Insights', icon: Zap, order: 7, group: 'analytics', tooltip: 'Forecasts, alerts, anomalies' },
-  { path: '/cost', label: 'Cost', icon: DollarSign, order: 8, group: 'analytics', tooltip: 'Energy, CO₂, AQI & 311 incident cost estimates' },
-  { path: '/live-stream', label: 'Live Stream', icon: Radio, order: 9, group: 'analytics', tooltip: 'Kafka → MongoDB live feed, updates ~45s' },
-  // Visualization
-  { path: '/citymap', label: 'City Map', icon: Map, order: 10, group: 'viz', tooltip: '2D zone map with real city coordinates' },
-  { path: '/visualizations', label: 'Viz', icon: Eye, order: 11, group: 'viz', tooltip: 'Heatmaps, zone comparison' },
-  // Management
-  { path: '/incidents', label: 'Incidents', icon: ClipboardList, order: 12, group: 'mgmt', tooltip: 'City 311 service requests & tracking' },
-  { path: '/reports', label: 'Reports', icon: FileText, order: 13, group: 'mgmt', tooltip: 'Generate & export reports' },
+  { path: '/cost', label: 'Cost', icon: DollarSign, order: 8, group: 'analytics', tooltip: 'Energy, CO₂, AQI & 311 cost estimates' },
+  { path: '/live-stream', label: 'Live Stream', icon: Radio, order: 9, group: 'analytics', tooltip: 'Kafka → MongoDB live feed' },
+  { path: '/tft', label: 'TFT', icon: Activity, order: 10, group: 'models', tooltip: 'TFT demand forecasting' },
+  { path: '/lstm', label: 'LSTM', icon: Activity, order: 11, group: 'models', tooltip: 'LSTM comparison baseline' },
+  { path: '/autoencoder', label: 'Autoencoder', icon: Activity, order: 12, group: 'models', tooltip: 'Anomaly detection' },
+  { path: '/gnn', label: 'GNN', icon: Network, order: 13, group: 'models', tooltip: 'Zone risk (graph)' },
+  { path: '/comparison', label: 'Compare', icon: GitCompare, order: 14, group: 'models', tooltip: 'Model comparison' },
+  { path: '/citymap', label: 'Maps', icon: Map, order: 15, group: 'viz', tooltip: '2D zone map' },
+  { path: '/visualizations', label: 'Viz', icon: Eye, order: 16, group: 'viz', tooltip: 'Heatmaps, zone comparison' },
+  { path: '/scenario-console', label: 'Scenario Console', icon: MessageSquare, order: 17, group: 'mgmt', tooltip: 'Simulate scenarios with domain AI (Phase 2d)' },
+  { path: '/scenario-bank', label: 'Scenario Bank', icon: ListChecks, order: 18, group: 'mgmt', tooltip: 'Curated scenarios, run & evaluate (Phase 3a)' },
+  { path: '/incidents', label: 'Incidents', icon: ClipboardList, order: 19, group: 'mgmt', tooltip: 'City 311 service requests' },
+  { path: '/reports', label: 'Reports', icon: FileText, order: 20, group: 'mgmt', tooltip: 'Generate & export reports' },
 ];
 
+// Phase 1c: Simulated — Home, Guide, Data, Analytics, Models (TFT/LSTM/Autoencoder/GNN/ARIMA/Prophet + comparison), Visualizations, Maps (2D, 3D), Reports, Admin (Data Editor, Manage Queries)
 const SIM_NAV = [
-  // Core Pages
   { path: '/', label: 'Home', icon: Home, order: 1, group: 'core', tooltip: 'Simulated dataset overview' },
   { path: '/guide', label: 'Guide', icon: BookOpen, order: 2, group: 'core', tooltip: 'System guide and documentation' },
   { path: '/data', label: 'Data', icon: Database, order: 3, group: 'core', tooltip: 'MongoDB collections explorer' },
-  // Analytics Group
   { path: '/analytics', label: 'Analytics', icon: BarChart3, order: 4, group: 'analytics', tooltip: 'Demand, AQI, correlations, anomalies' },
-  { path: '/advanced-analytics', label: 'Advanced', icon: Brain, order: 5, group: 'analytics', tooltip: 'ML models (TFT, LSTM comparison, GNN, etc.) & MongoDB queries' },
-  { path: '/ai-recommendations', label: 'AI Recs', icon: Brain, order: 6, group: 'analytics', tooltip: 'AI-powered prioritized recommendations' },
+  { path: '/advanced-analytics', label: 'Advanced', icon: Brain, order: 5, group: 'analytics', tooltip: 'ML models & MongoDB queries' },
+  { path: '/ai-recommendations', label: 'AI Recs', icon: Brain, order: 6, group: 'analytics', tooltip: 'AI-powered recommendations' },
   { path: '/insights', label: 'Insights', icon: Zap, order: 7, group: 'analytics', tooltip: 'Forecasts, alerts, anomalies' },
-  // Visualization (Live Stream and Disaster Sim removed - only available in City Live mode)
-  { path: '/citymap', label: '2D Grid', icon: Map, order: 9, group: 'viz', tooltip: '2D zone grid visualization' },
-  { path: '/simulation3d', label: '3D', icon: Box, order: 10, group: 'viz', tooltip: '3D simulation view' },
-  { path: '/visualizations', label: 'Viz', icon: Eye, order: 11, group: 'viz', tooltip: 'Heatmaps, zone comparison' },
-  // Note: TFT, LSTM (comparison), Autoencoder, GNN, and Compare are inside Advanced Analytics page
-  // Management
-  { path: '/incidents', label: 'Incidents', icon: ClipboardList, order: 14, group: 'mgmt', tooltip: 'Simulated incident reports & NLP' },
-  { path: '/admin/data', label: 'Admin', icon: Database, order: 15, group: 'mgmt', tooltip: 'MongoDB Atlas Admin - View, edit, delete data' },
-  { path: '/reports', label: 'Reports', icon: FileText, order: 16, group: 'mgmt', tooltip: 'Export simulated reports' },
+  { path: '/tft', label: 'TFT', icon: Activity, order: 8, group: 'models', tooltip: 'TFT demand forecasting' },
+  { path: '/lstm', label: 'LSTM', icon: Activity, order: 9, group: 'models', tooltip: 'LSTM comparison baseline' },
+  { path: '/autoencoder', label: 'Autoencoder', icon: Activity, order: 10, group: 'models', tooltip: 'Anomaly detection' },
+  { path: '/gnn', label: 'GNN', icon: Network, order: 11, group: 'models', tooltip: 'Zone risk (graph)' },
+  { path: '/comparison', label: 'Compare', icon: GitCompare, order: 12, group: 'models', tooltip: 'Model comparison' },
+  { path: '/citymap', label: '2D Grid', icon: Map, order: 13, group: 'viz', tooltip: '2D zone grid' },
+  { path: '/simulation3d', label: '3D', icon: Box, order: 14, group: 'viz', tooltip: '3D simulation view' },
+  { path: '/visualizations', label: 'Viz', icon: Eye, order: 15, group: 'viz', tooltip: 'Heatmaps, zone comparison' },
+  { path: '/incidents', label: 'Incidents', icon: ClipboardList, order: 16, group: 'mgmt', tooltip: 'Simulated incident reports & NLP' },
+  { path: '/admin/data', label: 'Data Editor', icon: Database, order: 17, group: 'mgmt', tooltip: 'MongoDB Atlas Admin' },
+  { path: '/admin/queries', label: 'Manage Queries', icon: FileText, order: 18, group: 'mgmt', tooltip: 'Manage saved queries' },
+  { path: '/reports', label: 'Reports', icon: FileText, order: 19, group: 'mgmt', tooltip: 'Export simulated reports' },
 ];
 
 export default function Navbar() {
@@ -94,6 +100,10 @@ export default function Navbar() {
 
       <div className="nav-mode">
         <ModeSwitcher />
+      </div>
+
+      <div className="nav-section-label" aria-hidden="true">
+        <span className="nav-section-text">{mode === 'sim' ? 'Simulated' : 'City Live'}</span>
       </div>
 
       <div className="nav-slider">
@@ -205,6 +215,22 @@ export default function Navbar() {
           flex-shrink: 0;
           display: flex;
           align-items: center;
+        }
+
+        .nav-section-label {
+          flex-shrink: 0;
+          display: flex;
+          align-items: center;
+          padding: 0 0.5rem;
+        }
+        .nav-section-text {
+          font-family: var(--font-display);
+          font-size: 0.6rem;
+          font-weight: 700;
+          letter-spacing: 0.15em;
+          text-transform: uppercase;
+          color: var(--text-muted);
+          opacity: 0.9;
         }
 
         .brand-icon-container {
