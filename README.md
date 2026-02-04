@@ -6,7 +6,9 @@ A full-stack intelligent system for managing urban energy grids with deep learni
 
 **Status:** ✅ Production Ready - All Core Features Implemented  
 **Version:** 1.0.0  
-**Last Updated:** January 19, 2026
+**Last Updated:** January 19, 2026  
+
+> **Alpha branch:** This is a trial push to the `alpha` branch for Code Rabbit code review and analysis.
 
 ## 🌟 Features
 
